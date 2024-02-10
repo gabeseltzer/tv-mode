@@ -1,4 +1,5 @@
 # requires https://github.com/frgnca/AudioDeviceCmdlets
+# requires http://www.nirsoft.net/utils/multi_monitor_tool.html
 Add-Type -AssemblyName PresentationCore,PresentationFramework
 $allAudio = Get-AudioDevice -List
 
@@ -35,7 +36,10 @@ $currentDefaultAudioDevice = Get-AudioDevice -Playback
 if ($currentDefaultAudioDevice.name -eq $headphoneDevice.name) {
   Write-Host "switching to speaker mode"
   Set-AudioDevice -ID $speakerDevice.ID
+  ./MultiMonitorTool/MultiMonitorTool.exe /enable \\.\DISPLAY2
+  # "C:\Program Files (x86)\Steam\steam.exe" "steam://open/bigpicture"  
 } elseif ($currentDefaultAudioDevice.name -eq $speakerDevice.name) {
   Write-Host "switching to headphone mode"
   Set-AudioDevice -ID $headphoneDevice.ID
+  ./MultiMonitorTool/MultiMonitorTool.exe /disable \\.\DISPLAY2
 }
