@@ -1,0 +1,41 @@
+# requires https://github.com/frgnca/AudioDeviceCmdlets
+Add-Type -AssemblyName PresentationCore,PresentationFramework
+$allAudio = Get-AudioDevice -List
+
+# foreach ($audioDevice in $allAudio){
+#   Write-Host $audioDevice.name
+#   if ($audioDevice.name -eq "Realtek HD Audio 2nd output (Realtek(R) Audio)") {
+#     Write-Host "ladies and gentlemen, we got 'em"
+#   }
+# }
+
+$headphoneName = "Realtek HD Audio 2nd output (Realtek(R) Audio)"
+$speakerName = "Realtek Digital Output (Realtek(R) Audio)"
+
+$headphonesExist = ($allAudio.name -contains $headphoneName)
+$speakersExist = ($allAudio.name -contains $speakerName)
+
+if (-Not $headphonesExist -Or -Not $speakersExist) {
+  $errorText = "Something went wrong!"
+  if (-Not $headphonesExist) {
+    $errorText = "$errorText `nHeadphone device is missing!`nIt should be called $headphoneName"
+  }
+  if (-Not $speakersExist) {
+    $errorText = "$errorText `nSpeaker device is missing!`nIt should be called $speakerName"
+  }
+  $errorText = 
+  [System.Windows.MessageBox]::Show($errorText)
+}
+
+$headphoneDevice = ($allAudio | Where-Object {$_.name -eq $headphoneName})
+$speakerDevice = ($allAudio | Where-Object {$_.name -eq $speakerName})
+
+$currentDefaultAudioDevice = Get-AudioDevice -Playback
+
+if ($currentDefaultAudioDevice.name -eq $headphoneDevice.name) {
+  Write-Host "switching to speaker mode"
+  Set-AudioDevice -ID $speakerDevice.ID
+} elseif ($currentDefaultAudioDevice.name -eq $speakerDevice.name) {
+  Write-Host "switching to headphone mode"
+  Set-AudioDevice -ID $headphoneDevice.ID
+}
