@@ -9,6 +9,7 @@ $allAudio = Get-AudioDevice -List
 #     Write-Host "ladies and gentlemen, we got 'em"
 #   }
 # }
+# WOW I MADE A CHANGE TO PUT IN A PR!!!
 
 $headphoneName = "Realtek HD Audio 2nd output (Realtek(R) Audio)"
 $speakerName = "Realtek Digital Output (Realtek(R) Audio)"
