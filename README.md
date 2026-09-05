@@ -1,5 +1,12 @@
 # tvmode
 
+> **Warning: this is a vibe-coded experiment.** Most of this code was written
+> by an AI assistant (Claude) and has only been lightly tested on one machine.
+> It switches your display topology and default audio device using Windows
+> APIs, which can leave you staring at a black screen if something goes wrong.
+> Read the code before you trust it, keep a way to recover (e.g. Win+P, or a
+> second input device), and don't run it on a machine you can't afford to poke at.
+
 Switch a Windows PC between named display + audio setups with one command.
 
 The motivating case: a **game** mode (two desk monitors, headphones) and a
