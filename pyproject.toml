@@ -1,0 +1,29 @@
+[project]
+name = "tvmode"
+version = "0.1.0"
+description = "Switch a Windows PC between named display + audio setups (e.g. desk vs TV) with one command"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+readme = "README.md"
+authors = [
+    { name = "Gabriel Seltzer", email = "gabeseltzer@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "comtypes>=1.4.16",
+]
+
+[project.scripts]
+tvmode = "tvmode.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
