@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Callable, Iterable, TypeVar
-
-T = TypeVar("T")
+from collections.abc import Callable, Iterable
 
 
 class MatchError(LookupError):
     pass
 
 
-def match_one(
+def match_one[T](
     matcher: str,
     candidates: Iterable[T],
     keys: Callable[[T], Iterable[str]],
@@ -35,7 +33,9 @@ def match_one(
         return exact[0]
     if len(exact) > 1:
         names = ", ".join(label(c) for c in exact)
-        raise MatchError(f"{kind} matcher {matcher!r} matches several devices exactly: {names}")
+        raise MatchError(
+            f"{kind} matcher {matcher!r} matches several devices exactly: {names}"
+        )
 
     partial = [c for c in cands if any(m in k.lower() for k in keys(c) if k)]
     if len(partial) == 1:

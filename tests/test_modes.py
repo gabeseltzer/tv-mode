@@ -1,7 +1,7 @@
+from fake_backend import MON1, MON2, TV, FakeBackend
+
 from tvmode.config import Mode
 from tvmode.modes import apply, current_mode, resolve
-
-from fake_backend import FakeBackend, MON1, MON2, TV
 
 GAME = Mode("game", ["S24C570", "LG ULTRAGEAR"], "Realtek HD Audio 2nd output")
 TVM = Mode("tv", ["SAMSUNG"], "Realtek Digital Output")
@@ -91,7 +91,9 @@ def test_tv_unplugged_is_a_clean_error():
 
 def test_ambiguous_matcher_is_a_clean_error():
     b = FakeBackend()
-    res = apply(Mode("x", ["Realtek"], None), b)  # no display matches; use audio ambiguity
+    res = apply(
+        Mode("x", ["Realtek"], None), b
+    )  # no display matches; use audio ambiguity
     res = apply(Mode("x", [], "Realtek"), b)
     assert not res.ok and "ambiguous" in res.errors[0]
 

@@ -48,7 +48,9 @@ class Config:
             return self.modes[name]
         except KeyError:
             known = ", ".join(sorted(self.modes)) or "(none)"
-            raise ConfigError(f"unknown mode {name!r}; configured modes: {known}") from None
+            raise ConfigError(
+                f"unknown mode {name!r}; configured modes: {known}"
+            ) from None
 
 
 def default_config_path() -> Path:
@@ -76,8 +78,12 @@ def parse_config(text: str, path: Path | None = None) -> Config:
         displays = body.get("displays", [])
         if isinstance(displays, str):
             displays = [displays]
-        if not isinstance(displays, list) or not all(isinstance(d, str) and d for d in displays):
-            raise ConfigError(f"[modes.{name}].displays must be a list of non-empty strings")
+        if not isinstance(displays, list) or not all(
+            isinstance(d, str) and d for d in displays
+        ):
+            raise ConfigError(
+                f"[modes.{name}].displays must be a list of non-empty strings"
+            )
         audio = body.get("audio")
         if audio is not None and (not isinstance(audio, str) or not audio):
             raise ConfigError(f"[modes.{name}].audio must be a non-empty string")

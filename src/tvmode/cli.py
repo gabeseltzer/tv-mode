@@ -11,7 +11,13 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .config import Config, ConfigError, default_config_path, load_config, render_template
+from .config import (
+    Config,
+    ConfigError,
+    default_config_path,
+    load_config,
+    render_template,
+)
 from .modes import Backend, WindowsBackend, apply, current_mode
 
 EXIT_OK = 0
@@ -30,7 +36,9 @@ def cmd_list(args, backend: Backend) -> int:
     _out("Displays:")
     for d in display_mod.list_displays(include_phantom=args.all):
         flag = "*" if d.active else ("-" if d.available else " ")
-        _out(f"  [{flag}] {d.label:<30} {d.output:<12} {d.gdi_name or '':<14} {d.device_path}")
+        _out(
+            f"  [{flag}] {d.label:<30} {d.output:<12} {d.gdi_name or '':<14} {d.device_path}"
+        )
     _out("    * = active   - = connected but off")
     _out("")
     _out("Audio outputs:")
@@ -104,10 +112,15 @@ def cmd_status(args, backend: Backend) -> int:
     cfg = _load(args)
     active = {d.label for d in backend.list_displays() if d.active}
     default_id = backend.default_audio_id()
-    default = next((a.label for a in backend.list_audio() if a.id == default_id), default_id)
+    default = next(
+        (a.label for a in backend.list_audio() if a.id == default_id), default_id
+    )
     _out("active displays:", ", ".join(sorted(active)) or "(none)")
     _out("default audio:  ", default or "(none)")
-    _out("current mode:   ", current_mode(cfg.modes, backend) or "(no configured mode matches)")
+    _out(
+        "current mode:   ",
+        current_mode(cfg.modes, backend) or "(no configured mode matches)",
+    )
     return EXIT_OK
 
 
@@ -126,7 +139,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("list", help="list detected displays and audio outputs")
-    s.add_argument("--all", action="store_true", help="include disconnected/phantom devices")
+    s.add_argument(
+        "--all", action="store_true", help="include disconnected/phantom devices"
+    )
     s.set_defaults(func=cmd_list)
 
     s = sub.add_parser("init", help="write a starter config from the detected devices")
@@ -146,7 +161,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(func=cmd_toggle)
 
-    s = sub.add_parser("status", help="show current devices and which mode is in effect")
+    s = sub.add_parser(
+        "status", help="show current devices and which mode is in effect"
+    )
     s.set_defaults(func=cmd_status)
     return p
 

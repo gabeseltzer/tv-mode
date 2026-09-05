@@ -18,7 +18,10 @@ def test_substring_unique():
 
 
 def test_matches_any_key():
-    cands = [("Generic PnP", r"\\?\DISPLAY#SAM0D3B#..."), ("LG", r"\\?\DISPLAY#GSM5B7F")]
+    cands = [
+        ("Generic PnP", r"\\?\DISPLAY#SAM0D3B#..."),
+        ("LG", r"\\?\DISPLAY#GSM5B7F"),
+    ]
     assert match_one("SAM0D3B", cands, keys)[0] == "Generic PnP"
 
 

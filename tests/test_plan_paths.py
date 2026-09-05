@@ -8,7 +8,9 @@ S0, S1, S2 = (A, 0), (A, 1), (A, 2)
 
 
 def rec(i, src, tgt, active=False, available=True):
-    return PathRecord(index=i, source=src, target=tgt, active=active, available=available)
+    return PathRecord(
+        index=i, source=src, target=tgt, active=active, available=available
+    )
 
 
 def all_paths(active_pairs=(), unavailable=()):
@@ -18,7 +20,13 @@ def all_paths(active_pairs=(), unavailable=()):
     for tgt in (MON1, MON2, TV):
         for src in (S0, S1, S2):
             recs.append(
-                rec(i, src, tgt, active=(src, tgt) in active_pairs, available=tgt not in unavailable)
+                rec(
+                    i,
+                    src,
+                    tgt,
+                    active=(src, tgt) in active_pairs,
+                    available=tgt not in unavailable,
+                )
             )
             i += 1
     return recs
@@ -39,7 +47,7 @@ def test_switch_from_monitors_to_tv_uses_a_free_source():
     idx = plan_paths(recs, {TV})
     pairs = chosen_pairs(recs, idx)
     assert len(pairs) == 1
-    (src, tgt), = pairs
+    ((_src, tgt),) = pairs
     assert tgt == TV
 
 

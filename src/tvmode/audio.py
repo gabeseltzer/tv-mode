@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass
+from typing import ClassVar
 
 import comtypes
 from comtypes import COMMETHOD, GUID, HRESULT, IUnknown
@@ -55,7 +56,9 @@ class PROPERTYKEY(ctypes.Structure):
     _fields_ = [("fmtid", GUID), ("pid", wintypes.DWORD)]
 
 
-PKEY_Device_FriendlyName = PROPERTYKEY(GUID("{A45C254E-DF1C-4EFD-8020-67D146A850E0}"), 14)
+PKEY_Device_FriendlyName = PROPERTYKEY(
+    GUID("{A45C254E-DF1C-4EFD-8020-67D146A850E0}"), 14
+)
 
 
 class _PROPVARIANT_UNION(ctypes.Union):
@@ -84,8 +87,10 @@ _ole32.PropVariantClear.restype = ctypes.c_long
 
 class IPropertyStore(IUnknown):
     _iid_ = GUID("{886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99}")
-    _methods_ = [
-        COMMETHOD([], HRESULT, "GetCount", (["out"], ctypes.POINTER(wintypes.DWORD), "cProps")),
+    _methods_: ClassVar[list] = [
+        COMMETHOD(
+            [], HRESULT, "GetCount", (["out"], ctypes.POINTER(wintypes.DWORD), "cProps")
+        ),
         COMMETHOD(
             [],
             HRESULT,
@@ -113,7 +118,7 @@ class IPropertyStore(IUnknown):
 
 class IMMDevice(IUnknown):
     _iid_ = GUID("{D666063F-1587-4E43-81F1-69A63C7256E3}")
-    _methods_ = [
+    _methods_: ClassVar[list] = [
         COMMETHOD(
             [],
             HRESULT,
@@ -130,15 +135,27 @@ class IMMDevice(IUnknown):
             (["in"], wintypes.DWORD, "stgmAccess"),
             (["out"], ctypes.POINTER(ctypes.POINTER(IPropertyStore)), "ppProperties"),
         ),
-        COMMETHOD([], HRESULT, "GetId", (["out"], ctypes.POINTER(wintypes.LPWSTR), "ppstrId")),
-        COMMETHOD([], HRESULT, "GetState", (["out"], ctypes.POINTER(wintypes.DWORD), "pdwState")),
+        COMMETHOD(
+            [], HRESULT, "GetId", (["out"], ctypes.POINTER(wintypes.LPWSTR), "ppstrId")
+        ),
+        COMMETHOD(
+            [],
+            HRESULT,
+            "GetState",
+            (["out"], ctypes.POINTER(wintypes.DWORD), "pdwState"),
+        ),
     ]
 
 
 class IMMDeviceCollection(IUnknown):
     _iid_ = GUID("{0BD7A1BE-7A1A-44DB-8397-CC5392387B5E}")
-    _methods_ = [
-        COMMETHOD([], HRESULT, "GetCount", (["out"], ctypes.POINTER(wintypes.UINT), "pcDevices")),
+    _methods_: ClassVar[list] = [
+        COMMETHOD(
+            [],
+            HRESULT,
+            "GetCount",
+            (["out"], ctypes.POINTER(wintypes.UINT), "pcDevices"),
+        ),
         COMMETHOD(
             [],
             HRESULT,
@@ -151,7 +168,7 @@ class IMMDeviceCollection(IUnknown):
 
 class IMMDeviceEnumerator(IUnknown):
     _iid_ = GUID("{A95664D2-9614-4F35-A746-DE8DB63617E6}")
-    _methods_ = [
+    _methods_: ClassVar[list] = [
         COMMETHOD(
             [],
             HRESULT,
@@ -183,8 +200,14 @@ class IPolicyConfig(IUnknown):
     """Undocumented. Vtable layout is stable from Windows 7 through 11."""
 
     _iid_ = GUID("{F8679F50-850A-41CF-9C72-430F290290C8}")
-    _methods_ = [
-        COMMETHOD([], HRESULT, "GetMixFormat", (["in"], wintypes.LPCWSTR), (["in"], ctypes.c_void_p)),
+    _methods_: ClassVar[list] = [
+        COMMETHOD(
+            [],
+            HRESULT,
+            "GetMixFormat",
+            (["in"], wintypes.LPCWSTR),
+            (["in"], ctypes.c_void_p),
+        ),
         COMMETHOD(
             [],
             HRESULT,
@@ -218,8 +241,20 @@ class IPolicyConfig(IUnknown):
             (["in"], wintypes.LPCWSTR),
             (["in"], ctypes.c_void_p),
         ),
-        COMMETHOD([], HRESULT, "GetShareMode", (["in"], wintypes.LPCWSTR), (["in"], ctypes.c_void_p)),
-        COMMETHOD([], HRESULT, "SetShareMode", (["in"], wintypes.LPCWSTR), (["in"], ctypes.c_void_p)),
+        COMMETHOD(
+            [],
+            HRESULT,
+            "GetShareMode",
+            (["in"], wintypes.LPCWSTR),
+            (["in"], ctypes.c_void_p),
+        ),
+        COMMETHOD(
+            [],
+            HRESULT,
+            "SetShareMode",
+            (["in"], wintypes.LPCWSTR),
+            (["in"], ctypes.c_void_p),
+        ),
         COMMETHOD(
             [],
             HRESULT,
@@ -278,7 +313,9 @@ class AudioDevice:
 def _enumerator() -> IMMDeviceEnumerator:
     comtypes.CoInitialize()
     return comtypes.CoCreateInstance(
-        CLSID_MMDeviceEnumerator, interface=IMMDeviceEnumerator, clsctx=comtypes.CLSCTX_ALL
+        CLSID_MMDeviceEnumerator,
+        interface=IMMDeviceEnumerator,
+        clsctx=comtypes.CLSCTX_ALL,
     )
 
 
@@ -302,7 +339,9 @@ def _default_id(enum: IMMDeviceEnumerator, flow: int, role: int) -> str | None:
         return None
 
 
-def list_audio_devices(flow: int = E_RENDER, include_inactive: bool = False) -> list[AudioDevice]:
+def list_audio_devices(
+    flow: int = E_RENDER, include_inactive: bool = False
+) -> list[AudioDevice]:
     enum = _enumerator()
     mask = DEVICE_STATEMASK_ALL if include_inactive else DEVICE_STATE_ACTIVE
     coll = enum.EnumAudioEndpoints(flow, mask)
@@ -322,7 +361,9 @@ def list_audio_devices(flow: int = E_RENDER, include_inactive: bool = False) -> 
     return out
 
 
-def get_default_audio_device(flow: int = E_RENDER, role: int = E_CONSOLE) -> AudioDevice | None:
+def get_default_audio_device(
+    flow: int = E_RENDER, role: int = E_CONSOLE
+) -> AudioDevice | None:
     enum = _enumerator()
     try:
         dev = enum.GetDefaultAudioEndpoint(flow, role)

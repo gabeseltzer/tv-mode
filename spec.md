@@ -1,6 +1,6 @@
 # Spec
 
-I want to start a project that lets me swap my windows pc from "gaming mode" to "tv mode". 
+I want to start a project that lets me swap my windows pc from "gaming mode" to "tv mode".
 
 ## Game mode
 
@@ -20,7 +20,7 @@ is on my couch, and
 
 #### Phase 1
 
-First, I'd like to make a simple script (power shell? Python?) that can do each of those swaps individually. It should be able to swap from an unknown mode to tv mode, and swap from an unknown mode to game mode. The goal is reliability across any circumstance and to some extent reliablity.
+First, I'd like to make a simple script (power shell? Python?) that can do each of those swaps individually. It should be able to swap from an unknown mode to tv mode, and swap from an unknown mode to game mode. The goal is reliability across any circumstance and to some extent reliability.
 
 This should be callable from an autohotkey script so that a simple key combo could do the swap for me.
 
@@ -30,7 +30,7 @@ Next I'd like to make this user friendly and installable as a single app/script.
 
 ### Tech Stack
 
-I have no idea what is good for this. My guess is that there is not an off-the-shelf open source solution that would work but perhaps https://github.com/Nuzair46/Monarch would work. If that just works, great, I'm happy to use that. But if not, I would prefer to do this in a real programming language rather than just powershell scripts. Ideally python since I'm used to it but if there's a language that can get us to a nice executable and installer in phase 2 perhaps that's better. I think it comes down to what works with the windows apis.
+I have no idea what is good for this. My guess is that there is not an off-the-shelf open source solution that would work but perhaps <https://github.com/Nuzair46/Monarch> would work. If that just works, great, I'm happy to use that. But if not, I would prefer to do this in a real programming language rather than just powershell scripts. Ideally python since I'm used to it but if there's a language that can get us to a nice executable and installer in phase 2 perhaps that's better. I think it comes down to what works with the windows apis.
 
 Eventually it would be nice to have a configurator UI that lets you pick the modes, the transitions, and eventually lets you set hotkeys, etc ourselves and not rely on autohotkey.
 

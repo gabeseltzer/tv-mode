@@ -222,8 +222,12 @@ class DISPLAYCONFIG_SOURCE_DEVICE_NAME(ctypes.Structure):
 
 
 # Sanity-check struct sizes against the documented Win32 layout.
-assert ctypes.sizeof(DISPLAYCONFIG_PATH_INFO) == 72, ctypes.sizeof(DISPLAYCONFIG_PATH_INFO)
-assert ctypes.sizeof(DISPLAYCONFIG_MODE_INFO) == 64, ctypes.sizeof(DISPLAYCONFIG_MODE_INFO)
+assert ctypes.sizeof(DISPLAYCONFIG_PATH_INFO) == 72, ctypes.sizeof(
+    DISPLAYCONFIG_PATH_INFO
+)
+assert ctypes.sizeof(DISPLAYCONFIG_MODE_INFO) == 64, ctypes.sizeof(
+    DISPLAYCONFIG_MODE_INFO
+)
 assert ctypes.sizeof(DISPLAYCONFIG_TARGET_DEVICE_NAME) == 420
 
 
@@ -271,7 +275,9 @@ def _user32():
         wintypes.UINT,
     ]
     u.SetDisplayConfig.restype = wintypes.LONG
-    u.DisplayConfigGetDeviceInfo.argtypes = [ctypes.POINTER(DISPLAYCONFIG_DEVICE_INFO_HEADER)]
+    u.DisplayConfigGetDeviceInfo.argtypes = [
+        ctypes.POINTER(DISPLAYCONFIG_DEVICE_INFO_HEADER)
+    ]
     u.DisplayConfigGetDeviceInfo.restype = wintypes.LONG
     _user32_cache = u
     return u
@@ -285,7 +291,9 @@ def query_display_config(flags: int = QDC_ALL_PATHS):
     # Buffer sizes can change between the two calls if a monitor is plugged
     # in; retry on ERROR_INSUFFICIENT_BUFFER.
     for _ in range(5):
-        rc = u.GetDisplayConfigBufferSizes(flags, ctypes.byref(n_paths), ctypes.byref(n_modes))
+        rc = u.GetDisplayConfigBufferSizes(
+            flags, ctypes.byref(n_paths), ctypes.byref(n_modes)
+        )
         if rc != ERROR_SUCCESS:
             raise DisplayConfigError("GetDisplayConfigBufferSizes", rc)
         paths = (DISPLAYCONFIG_PATH_INFO * n_paths.value)()
@@ -455,7 +463,9 @@ def list_displays(include_phantom: bool = False) -> list[DisplayInfo]:
             if active:
                 seen[key].active = True
                 try:
-                    seen[key].gdi_name = get_source_name(p.sourceInfo.adapterId, p.sourceInfo.id)
+                    seen[key].gdi_name = get_source_name(
+                        p.sourceInfo.adapterId, p.sourceInfo.id
+                    )
                 except DisplayConfigError:
                     pass
             continue
@@ -526,6 +536,8 @@ def set_active_displays(wanted: set[TargetKey], *, validate_only: bool = False) 
         raise DisplayConfigError("SetDisplayConfig(validate)", rc)
     if validate_only:
         return
-    rc = u.SetDisplayConfig(len(arr), arr, 0, None, base | SDC_APPLY | SDC_SAVE_TO_DATABASE)
+    rc = u.SetDisplayConfig(
+        len(arr), arr, 0, None, base | SDC_APPLY | SDC_SAVE_TO_DATABASE
+    )
     if rc != ERROR_SUCCESS:
         raise DisplayConfigError("SetDisplayConfig(apply)", rc)

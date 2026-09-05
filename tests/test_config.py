@@ -37,9 +37,9 @@ def test_audio_only_mode_ok():
         ("[other]\nx=1\n", "at least one"),
         ("[modes.x]\n", "displays and/or audio"),
         ("[modes.x]\ndisplays = [1]\n", "non-empty strings"),
-        ("[modes.x]\ndisplays = [\"\"]\n", "non-empty strings"),
+        ('[modes.x]\ndisplays = [""]\n', "non-empty strings"),
         ("[modes.x]\naudio = 3\n", "non-empty string"),
-        ("[modes.x]\naudio = \"a\"\nbogus = 1\n", "unknown keys"),
+        ('[modes.x]\naudio = "a"\nbogus = 1\n', "unknown keys"),
         ("not toml [[[", "invalid TOML"),
     ],
 )
@@ -57,7 +57,10 @@ def test_unknown_mode():
 def test_template_round_trips():
     text = render_template(
         displays=[("S24C570", True), ("LG ULTRAGEAR", True), ("SAMSUNG", False)],
-        audio=[("Realtek HD Audio 2nd output", True), ("Realtek Digital Output", False)],
+        audio=[
+            ("Realtek HD Audio 2nd output", True),
+            ("Realtek Digital Output", False),
+        ],
     )
     cfg = parse_config(text)
     assert cfg.mode("game").displays == ["S24C570", "LG ULTRAGEAR"]

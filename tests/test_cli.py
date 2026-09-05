@@ -1,8 +1,7 @@
 import pytest
+from fake_backend import MON1, MON2, TV, FakeBackend
 
 from tvmode.cli import EXIT_CONFIG, EXIT_FAILED, EXIT_OK, main
-
-from fake_backend import FakeBackend, MON1, MON2, TV
 
 CONFIG = """
 [modes.game]

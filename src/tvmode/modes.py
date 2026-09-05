@@ -10,9 +10,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from .audio import AudioDevice
 from .config import Mode
 from .display import DisplayInfo, TargetKey
-from .audio import AudioDevice
 from .matching import MatchError, match_one
 
 
@@ -102,7 +102,9 @@ def resolve(mode: Mode, backend: Backend, *, do_display=True, do_audio=True) -> 
         for m in mode.displays:
             d = match_one(m, displays, _display_keys, lambda d: d.label, kind="display")
             if d in chosen:
-                raise MatchError(f"display matcher {m!r} resolves to an already-chosen display")
+                raise MatchError(
+                    f"display matcher {m!r} resolves to an already-chosen display"
+                )
             chosen.append(d)
         plan.displays = chosen
         wanted = {d.target for d in chosen}
@@ -110,7 +112,9 @@ def resolve(mode: Mode, backend: Backend, *, do_display=True, do_audio=True) -> 
 
     if do_audio and mode.audio:
         devices = backend.list_audio()
-        a = match_one(mode.audio, devices, _audio_keys, lambda a: a.label, kind="audio device")
+        a = match_one(
+            mode.audio, devices, _audio_keys, lambda a: a.label, kind="audio device"
+        )
         plan.audio = a
         plan.audio_change_needed = backend.default_audio_id() != a.id
 
