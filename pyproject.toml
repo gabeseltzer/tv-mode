@@ -11,6 +11,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "comtypes>=1.4.16",
+    "pycaw>=20251023",
 ]
 
 [project.scripts]
@@ -29,5 +30,5 @@ dev = [
 testpaths = ["tests"]
 
 [[tool.mypy.overrides]]
-module = "comtypes.*"
+module = ["comtypes.*", "pycaw.*"]
 ignore_missing_imports = true

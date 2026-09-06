@@ -21,13 +21,13 @@ MON2 = DisplayInfo(
 TV = DisplayInfo((A, 102), "SAMSUNG", r"\\?\DISPLAY#SAM0D3B#x", "hdmi", False, True)
 
 HEADPHONES = AudioDevice(
-    "id-hp", "Realtek HD Audio 2nd output (Realtek(R) Audio)", "active", True
+    "id-hp", "Realtek HD Audio 2nd output (Realtek(R) Audio)", "Active", True
 )
 SPEAKERS = AudioDevice(
-    "id-spk", "Realtek Digital Output (Realtek(R) Audio)", "active", False
+    "id-spk", "Realtek Digital Output (Realtek(R) Audio)", "Active", False
 )
 CABLE = AudioDevice(
-    "id-cable", "CABLE In 16ch (VB-Audio Virtual Cable)", "active", False
+    "id-cable", "CABLE In 16ch (VB-Audio Virtual Cable)", "Active", False
 )
 
 
