@@ -39,9 +39,28 @@ class Mode:
 
 
 @dataclass
+class Trigger:
+    """Input devices whose use means the user is at the setup for ``mode``."""
+
+    mode: str
+    keyboards: list[str] = field(default_factory=list)
+    mice: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AutoConfig:
+    triggers: dict[str, Trigger] = field(default_factory=dict)
+    cooldown: float = 30.0
+    wiggle_window: float = 1.5
+    wiggle_distance: float = 300.0
+    wiggle_reversals: int = 2
+
+
+@dataclass
 class Config:
     modes: dict[str, Mode] = field(default_factory=dict)
     path: Path | None = None
+    auto: AutoConfig | None = None
 
     def mode(self, name: str) -> Mode:
         try:
@@ -93,7 +112,73 @@ def parse_config(text: str, path: Path | None = None) -> Config:
         if unknown:
             raise ConfigError(f"[modes.{name}] has unknown keys: {sorted(unknown)}")
         modes[name] = Mode(name=name, displays=list(displays), audio=audio)
-    return Config(modes=modes, path=path)
+
+    auto = None
+    if "auto" in data:
+        auto = _parse_auto(data["auto"], modes)
+    return Config(modes=modes, path=path, auto=auto)
+
+
+def _str_list(body: dict, table: str, key: str) -> list[str]:
+    v = body.get(key, [])
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, list) or not all(isinstance(x, str) and x for x in v):
+        raise ConfigError(f"[{table}].{key} must be a list of non-empty strings")
+    return list(v)
+
+
+def _number(body: dict, table: str, key: str, default, *, integer=False):
+    v = body.get(key, default)
+    ok = isinstance(v, int) if integer else isinstance(v, (int, float))
+    if not ok or isinstance(v, bool) or v <= 0:
+        kind = "a positive integer" if integer else "a positive number"
+        raise ConfigError(f"[{table}].{key} must be {kind}")
+    return v
+
+
+def _parse_auto(raw, modes: dict[str, Mode]) -> AutoConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("[auto] must be a table")
+    unknown = set(raw) - {
+        "modes",
+        "cooldown",
+        "wiggle_window",
+        "wiggle_distance",
+        "wiggle_reversals",
+    }
+    if unknown:
+        raise ConfigError(f"[auto] has unknown keys: {sorted(unknown)}")
+
+    auto = AutoConfig(
+        cooldown=float(_number(raw, "auto", "cooldown", 30.0)),
+        wiggle_window=float(_number(raw, "auto", "wiggle_window", 1.5)),
+        wiggle_distance=float(_number(raw, "auto", "wiggle_distance", 300.0)),
+        wiggle_reversals=_number(raw, "auto", "wiggle_reversals", 2, integer=True),
+    )
+
+    trig_raw = raw.get("modes")
+    if not isinstance(trig_raw, dict) or not trig_raw:
+        raise ConfigError("[auto] must contain at least one [auto.modes.<name>] table")
+    for name, body in trig_raw.items():
+        table = f"auto.modes.{name}"
+        if name not in modes:
+            known = ", ".join(sorted(modes))
+            raise ConfigError(f"[{table}] refers to unknown mode; modes: {known}")
+        if not isinstance(body, dict):
+            raise ConfigError(f"[{table}] must be a table")
+        unknown = set(body) - {"keyboards", "mice"}
+        if unknown:
+            raise ConfigError(f"[{table}] has unknown keys: {sorted(unknown)}")
+        t = Trigger(
+            mode=name,
+            keyboards=_str_list(body, table, "keyboards"),
+            mice=_str_list(body, table, "mice"),
+        )
+        if not t.keyboards and not t.mice:
+            raise ConfigError(f"[{table}] must set keyboards and/or mice")
+        auto.triggers[name] = t
+    return auto
 
 
 def load_config(path: Path | None = None) -> Config:

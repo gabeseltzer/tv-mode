@@ -62,6 +62,46 @@ and its device path/id, as shown by `tvmode list`. An exact match wins;
 otherwise the substring must match exactly one connected device, or you get an
 error telling you what it matched.
 
+## Automatic switching
+
+`tvmode watch` switches modes by itself based on *which* keyboard or mouse you
+touch. It uses the Windows Raw Input API, the only one that reports the source
+device per event, so the keyboard at the desk and the one on the couch can
+each be tied to a mode. Add an `[auto]` section to the config:
+
+```toml
+[auto]
+cooldown = 30            # seconds to ignore triggers after a switch
+wiggle_window = 1.5      # seconds of mouse motion considered
+wiggle_distance = 300    # total travel (counts) needed in that window
+wiggle_reversals = 2     # direction changes needed in that window
+
+[auto.modes.game]
+keyboards = ["VID_308F&PID_0011"]   # any key press on this keyboard -> game
+mice = ["VID_3151&PID_3000"]        # a deliberate wiggle of this mouse -> game
+
+[auto.modes.tv]
+keyboards = ["VID_04D9&PID_FC40"]
+```
+
+* `tvmode inputs` lists attached keyboards and mice with their USB VID/PID.
+  One physical keyboard usually appears as several devices (one per USB
+  interface); a VID/PID matcher covers all of them. Matchers are compared
+  against the VID/PID, the registry description, and the full device path.
+* `tvmode watch --debug` logs every event with its device, which is the easy
+  way to find out which VID/PID is which keyboard.
+* `tvmode watch --dry-run` logs the switches it would make without making them.
+* Mouse motion only counts as a trigger if, within `wiggle_window` seconds, it
+  covers at least `wiggle_distance` counts *and* reverses direction at least
+  `wiggle_reversals` times on one axis. Sensor drift and a bumped desk are
+  one-directional and never qualify; a deliberate back-and-forth does.
+* Input from devices tied to the mode already in effect is ignored, as is
+  everything during the `cooldown` after a switch. Switching manually with
+  `tvmode apply` is noticed and not fought.
+
+Run it at logon with Task Scheduler (`uv run tvmode watch`), or from a
+terminal while trying it out; Ctrl+C stops it.
+
 ## Hotkeys
 
 `tvmode.ahk` is an AutoHotkey v2 script binding Ctrl+Alt+T / G / M to

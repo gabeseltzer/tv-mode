@@ -136,6 +136,47 @@ def cmd_test(args, backend: Backend) -> int:
     return rc
 
 
+def cmd_inputs(args, backend: Backend) -> int:
+    """List raw input devices so the user can write [auto.modes.*] matchers."""
+    from .rawinput import list_input_devices
+
+    devs = list_input_devices()
+    if not args.all:
+        devs = [d for d in devs if d.kind in ("keyboard", "mouse")]
+    _out("Input devices (match on the VID/PID, or any part of the path):")
+    for d in sorted(devs, key=lambda d: (d.kind, d.vid_pid, d.path)):
+        _out(f"  {d.kind:<9} {d.vid_pid:<20} {d.description:<40} {d.path}")
+    _out("")
+    _out("One physical keyboard usually shows up as several devices; a matcher")
+    _out("like \"VID_1234&PID_5678\" covers all of them.")
+    _out("Run `tvmode watch --debug` and press keys to see which device is which.")
+    return EXIT_OK
+
+
+def cmd_watch(args, backend: Backend) -> int:
+    """Run the auto-switcher until Ctrl+C."""
+    import logging
+
+    from .auto import Watcher
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    cfg = _load(args)
+    if cfg.auto is None:
+        raise ConfigError(
+            f"no [auto] section in {cfg.path}; see README for the format"
+        )
+    w = Watcher(cfg, backend, dry_run=args.dry_run, debug=args.debug)
+    try:
+        w.run()
+    except KeyboardInterrupt:
+        _out("stopping")
+    return EXIT_OK
+
+
 def cmd_status(args, backend: Backend) -> int:
     cfg = _load(args)
     active = {d.label for d in backend.list_displays() if d.active}
@@ -209,6 +250,24 @@ def build_parser() -> argparse.ArgumentParser:
         "status", help="show current devices and which mode is in effect"
     )
     s.set_defaults(func=cmd_status)
+
+    s = sub.add_parser(
+        "inputs", help="list keyboards and mice (for [auto.modes.*] matchers)"
+    )
+    s.add_argument("--all", action="store_true", help="include other HID devices")
+    s.set_defaults(func=cmd_inputs)
+
+    s = sub.add_parser(
+        "watch",
+        help="switch modes automatically based on which keyboard/mouse is used",
+    )
+    s.add_argument(
+        "--dry-run", action="store_true", help="log decisions without switching"
+    )
+    s.add_argument(
+        "--debug", action="store_true", help="log every input event and its device"
+    )
+    s.set_defaults(func=cmd_watch)
     return p
 
 
