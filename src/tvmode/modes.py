@@ -121,6 +121,56 @@ def resolve(mode: Mode, backend: Backend, *, do_display=True, do_audio=True) -> 
     return plan
 
 
+def _switch_displays(
+    backend: Backend,
+    wanted: set[TargetKey],
+    names: str,
+    res: Result,
+    *,
+    verify_retries: int,
+    verify_delay: float,
+) -> None:
+    try:
+        backend.set_active_displays(wanted)
+        for _ in range(verify_retries):
+            if backend.active_targets() == wanted:
+                break
+            backend.sleep(verify_delay)
+        else:
+            raise RuntimeError(
+                f"display change did not take effect (active={backend.active_targets()}, wanted={wanted})"
+            )
+        res.display_changed = True
+        res.messages.append(f"displays -> {names}")
+    except Exception as e:  # noqa: BLE001 - report every failure
+        res.ok = False
+        res.errors.append(f"display: {e}")
+
+
+def _switch_audio(
+    backend: Backend,
+    device_id: str,
+    name: str,
+    res: Result,
+    *,
+    verify_retries: int,
+    verify_delay: float,
+) -> None:
+    try:
+        backend.set_default_audio(device_id)
+        for _ in range(verify_retries):
+            if backend.default_audio_id() == device_id:
+                break
+            backend.sleep(verify_delay)
+        else:
+            raise RuntimeError("audio device change did not take effect")
+        res.audio_changed = True
+        res.messages.append(f"audio -> {name}")
+    except Exception as e:  # noqa: BLE001
+        res.ok = False
+        res.errors.append(f"audio: {e}")
+
+
 def apply(
     mode: Mode,
     backend: Backend,
@@ -151,21 +201,14 @@ def apply(
         elif dry_run:
             res.messages.append(f"would activate displays: {names}")
         else:
-            try:
-                backend.set_active_displays(wanted)
-                for attempt in range(verify_retries):
-                    if backend.active_targets() == wanted:
-                        break
-                    backend.sleep(verify_delay)
-                else:
-                    raise RuntimeError(
-                        f"display change did not take effect (active={backend.active_targets()}, wanted={wanted})"
-                    )
-                res.display_changed = True
-                res.messages.append(f"displays -> {names}")
-            except Exception as e:  # noqa: BLE001 - report every failure
-                res.ok = False
-                res.errors.append(f"display: {e}")
+            _switch_displays(
+                backend,
+                wanted,
+                names,
+                res,
+                verify_retries=verify_retries,
+                verify_delay=verify_delay,
+            )
 
     # ---- audio ---------------------------------------------------------- #
     if plan.audio:
@@ -175,19 +218,83 @@ def apply(
         elif dry_run:
             res.messages.append(f"would set default audio: {a.label}")
         else:
-            try:
-                backend.set_default_audio(a.id)
-                for attempt in range(verify_retries):
-                    if backend.default_audio_id() == a.id:
-                        break
-                    backend.sleep(verify_delay)
-                else:
-                    raise RuntimeError("audio device change did not take effect")
-                res.audio_changed = True
-                res.messages.append(f"audio -> {a.label}")
-            except Exception as e:  # noqa: BLE001
-                res.ok = False
-                res.errors.append(f"audio: {e}")
+            _switch_audio(
+                backend,
+                a.id,
+                a.label,
+                res,
+                verify_retries=verify_retries,
+                verify_delay=verify_delay,
+            )
+
+    return res
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    """The raw device state at some moment, independent of any configured
+    mode, so it can be restored even if the current setup matches no mode."""
+
+    displays: frozenset[TargetKey]
+    display_names: str
+    audio_id: str | None
+    audio_name: str
+
+
+def snapshot(backend: Backend) -> Snapshot:
+    """Capture the currently active displays and default audio device."""
+    active = [d for d in backend.list_displays() if d.active]
+    audio_id = backend.default_audio_id()
+    audio_name = next(
+        (a.label for a in backend.list_audio() if a.id == audio_id),
+        audio_id or "(none)",
+    )
+    return Snapshot(
+        displays=frozenset(d.target for d in active),
+        display_names=", ".join(d.label for d in active) or "(none)",
+        audio_id=audio_id,
+        audio_name=audio_name,
+    )
+
+
+def restore(
+    snap: Snapshot,
+    backend: Backend,
+    *,
+    do_display: bool = True,
+    do_audio: bool = True,
+    verify_retries: int = 3,
+    verify_delay: float = 1.0,
+) -> Result:
+    """Put the devices back to the state captured by ``snapshot``. Each half
+    is skipped if it is already in that state."""
+    res = Result(mode="(previous setup)", ok=True)
+
+    if do_display and snap.displays:
+        if backend.active_targets() == set(snap.displays):
+            res.messages.append(f"displays already set: {snap.display_names}")
+        else:
+            _switch_displays(
+                backend,
+                set(snap.displays),
+                snap.display_names,
+                res,
+                verify_retries=verify_retries,
+                verify_delay=verify_delay,
+            )
+
+    if do_audio and snap.audio_id:
+        if backend.default_audio_id() == snap.audio_id:
+            res.messages.append(f"audio already set: {snap.audio_name}")
+        else:
+            _switch_audio(
+                backend,
+                snap.audio_id,
+                snap.audio_name,
+                res,
+                verify_retries=verify_retries,
+                verify_delay=verify_delay,
+            )
 
     return res
 

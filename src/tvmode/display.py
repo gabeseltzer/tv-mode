@@ -44,6 +44,8 @@ DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME = 2
 
 ERROR_SUCCESS = 0
 ERROR_INSUFFICIENT_BUFFER = 122
+ERROR_GEN_FAILURE = 31
+ERROR_BAD_CONFIGURATION = 1610
 
 _WIN32_ERRORS = {
     5: "ERROR_ACCESS_DENIED",
@@ -530,14 +532,29 @@ def set_active_displays(wanted: set[TargetKey], *, validate_only: bool = False) 
 
     u = _user32()
     # NB: SDC_VIRTUAL_MODE_AWARE makes this call fail with ERROR_INVALID_PARAMETER.
-    base = SDC_TOPOLOGY_SUPPLIED | SDC_ALLOW_PATH_ORDER_CHANGES
-    rc = u.SetDisplayConfig(len(arr), arr, 0, None, base | SDC_VALIDATE)
+    # NB: SDC_SAVE_TO_DATABASE is only legal with SDC_USE_SUPPLIED_DISPLAY_CONFIG;
+    #     combining it with SDC_TOPOLOGY_SUPPLIED also yields ERROR_INVALID_PARAMETER.
+    topo = SDC_TOPOLOGY_SUPPLIED | SDC_ALLOW_PATH_ORDER_CHANGES
+    rc = u.SetDisplayConfig(len(arr), arr, 0, None, topo | SDC_VALIDATE)
     if rc != ERROR_SUCCESS:
         raise DisplayConfigError("SetDisplayConfig(validate)", rc)
     if validate_only:
         return
-    rc = u.SetDisplayConfig(
-        len(arr), arr, 0, None, base | SDC_APPLY | SDC_SAVE_TO_DATABASE
-    )
+    rc = u.SetDisplayConfig(len(arr), arr, 0, None, topo | SDC_APPLY)
+    if rc in (ERROR_BAD_CONFIGURATION, ERROR_GEN_FAILURE):
+        # Windows has no saved modes for this exact topology (first time the
+        # set of monitors is used together). Fall back to letting best-mode
+        # logic pick modes for the supplied paths, and persist the result so
+        # the topology route works next time.
+        rc = u.SetDisplayConfig(
+            len(arr),
+            arr,
+            0,
+            None,
+            SDC_USE_SUPPLIED_DISPLAY_CONFIG
+            | SDC_ALLOW_CHANGES
+            | SDC_APPLY
+            | SDC_SAVE_TO_DATABASE,
+        )
     if rc != ERROR_SUCCESS:
         raise DisplayConfigError("SetDisplayConfig(apply)", rc)

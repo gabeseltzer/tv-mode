@@ -34,10 +34,14 @@ notepad $env:APPDATA\tvmode\config.toml
 uv run tvmode apply tv
 uv run tvmode apply game
 uv run tvmode toggle    # flip between the two
+uv run tvmode test tv   # switch to tv for 10s, then put everything back
 uv run tvmode status
 ```
 
 `tvmode apply <mode> --dry-run` shows what would change without doing it.
+`tvmode test <mode> [--seconds N]` is the safe way to try a new config: it
+snapshots the current displays and audio device, applies the mode, waits, and
+restores the snapshot, even if the switch only half-worked or you hit Ctrl+C.
 
 ## Config
 

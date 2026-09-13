@@ -18,7 +18,7 @@ from .config import (
     load_config,
     render_template,
 )
-from .modes import Backend, WindowsBackend, apply, current_mode
+from .modes import Backend, WindowsBackend, apply, current_mode, restore, snapshot
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -108,6 +108,34 @@ def cmd_toggle(args, backend: Backend) -> int:
     return _report(res)
 
 
+def cmd_test(args, backend: Backend) -> int:
+    """Switch to a mode, hold it for a few seconds, then put everything back
+    the way it was. Restoring happens even on failure or Ctrl+C."""
+    cfg = _load(args)
+    mode = cfg.mode(args.mode)
+    do_display = not args.audio_only
+    do_audio = not args.display_only
+    snap = snapshot(backend)
+    _out(f"current: displays={snap.display_names}; audio={snap.audio_name}")
+    _out(f"testing mode {mode.name!r} for {args.seconds:g}s ...")
+    rc = EXIT_OK
+    try:
+        res = apply(mode, backend, do_display=do_display, do_audio=do_audio)
+        rc = _report(res)
+        if res.display_changed or res.audio_changed:
+            backend.sleep(args.seconds)
+        else:
+            _out("nothing changed; reverting immediately")
+    except KeyboardInterrupt:
+        _out("interrupted; reverting")
+        rc = EXIT_FAILED
+    finally:
+        _out("reverting to previous setup ...")
+        back = restore(snap, backend, do_display=do_display, do_audio=do_audio)
+        rc = max(rc, _report(back))
+    return rc
+
+
 def cmd_status(args, backend: Backend) -> int:
     cfg = _load(args)
     active = {d.label for d in backend.list_displays() if d.active}
@@ -160,6 +188,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--between", nargs=2, metavar=("A", "B"))
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(func=cmd_toggle)
+
+    s = sub.add_parser(
+        "test", help="switch to a mode for a few seconds, then switch back"
+    )
+    s.add_argument("mode")
+    s.add_argument(
+        "--seconds",
+        "-s",
+        type=float,
+        default=10.0,
+        help="how long to hold the mode before reverting (default 10)",
+    )
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--display-only", action="store_true")
+    g.add_argument("--audio-only", action="store_true")
+    s.set_defaults(func=cmd_test)
 
     s = sub.add_parser(
         "status", help="show current devices and which mode is in effect"
