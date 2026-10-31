@@ -47,9 +47,14 @@ HID_USAGE_GENERIC_KEYBOARD = 0x06
 WM_INPUT = 0x00FF
 WM_INPUT_DEVICE_CHANGE = 0x00FE
 WM_CLOSE = 0x0010
+WM_DISPLAYCHANGE = 0x007E
+WM_TIMER = 0x0113
 WM_DESTROY = 0x0002
 
 WS_OVERLAPPED = 0x00000000
+
+TIMER_SETTLE = 1  # one-shot, restarted by each display change
+TIMER_POLL = 2  # periodic
 
 ERROR_CLASS_ALREADY_EXISTS = 1410
 INVALID = 0xFFFFFFFF
@@ -272,6 +277,15 @@ def _user32():
     u.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
     u.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
     u.DispatchMessageW.restype = ctypes.c_ssize_t
+    u.SetTimer.argtypes = [
+        wintypes.HWND,
+        ctypes.c_size_t,
+        wintypes.UINT,
+        ctypes.c_void_p,
+    ]
+    u.SetTimer.restype = ctypes.c_size_t
+    u.KillTimer.argtypes = [wintypes.HWND, ctypes.c_size_t]
+    u.KillTimer.restype = wintypes.BOOL
     _user32_cache = u
     return u
 
@@ -387,6 +401,11 @@ class RawInputListener:
     and hands each event to ``on_event``. ``on_devices_changed`` (optional) is
     called when a device arrives or is removed.
 
+    ``on_state_check`` (optional) is called ``display_settle`` seconds after
+    the display configuration changes (debounced: a burst of changes gives one
+    call) and every ``poll_interval`` seconds, so the owner can re-read state
+    that something else may have changed behind its back.
+
     Exceptions raised by the callbacks are passed to ``on_error`` (default:
     ignored) so they can never kill the message pump."""
 
@@ -395,9 +414,15 @@ class RawInputListener:
         on_event: Callable[[InputEvent], None],
         on_devices_changed: Callable[[], None] | None = None,
         on_error: Callable[[BaseException], None] | None = None,
+        on_state_check: Callable[[], None] | None = None,
+        display_settle: float = 1.0,
+        poll_interval: float | None = 15.0,
     ) -> None:
         self._on_event = on_event
         self._on_devices_changed = on_devices_changed
+        self._on_state_check = on_state_check
+        self._display_settle_ms = max(int(display_settle * 1000), 10)
+        self._poll_ms = int(poll_interval * 1000) if poll_interval else 0
         self._on_error = on_error
         self._hwnd: int | None = None
         self._buf = ctypes.create_string_buffer(max(ctypes.sizeof(RAWINPUT), 64))
@@ -420,6 +445,17 @@ class RawInputListener:
         if msg == WM_INPUT_DEVICE_CHANGE:
             if self._on_devices_changed is not None:
                 self._guard(self._on_devices_changed)
+            return 0
+        if msg == WM_DISPLAYCHANGE:
+            if self._on_state_check is not None:
+                # Restarting the timer debounces the burst a switch produces.
+                u.SetTimer(hwnd, TIMER_SETTLE, self._display_settle_ms, None)
+            return u.DefWindowProcW(hwnd, msg, wparam, lparam)
+        if msg == WM_TIMER and wparam in (TIMER_SETTLE, TIMER_POLL):
+            if wparam == TIMER_SETTLE:
+                u.KillTimer(hwnd, TIMER_SETTLE)
+            if self._on_state_check is not None:
+                self._guard(self._on_state_check)
             return 0
         if msg == WM_CLOSE:
             u.DestroyWindow(hwnd)
@@ -491,6 +527,8 @@ class RawInputListener:
         self._hwnd = self._create_window()
         try:
             self._register(self._hwnd)
+            if self._on_state_check is not None and self._poll_ms:
+                u.SetTimer(self._hwnd, TIMER_POLL, self._poll_ms, None)
             msg = wintypes.MSG()
             while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
                 u.TranslateMessage(ctypes.byref(msg))

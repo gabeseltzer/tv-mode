@@ -7,7 +7,8 @@ Three layers, the first two pure Python and unit-tested:
   window) rather than sensor drift or a bumped desk.
 * ``Policy`` is the state machine: maps device events to "switch to mode X"
   decisions, honouring the current mode, a cooldown after each switch and an
-  in-progress switch.
+  in-progress switch. The current mode is re-read from the system after any
+  display change and periodically, so manual switches are picked up.
 * ``Watcher`` glues them to ``rawinput.RawInputListener`` and ``modes.apply``;
   switches run on a worker thread so the message pump keeps going.
 """
@@ -138,6 +139,15 @@ class Policy:
     def switch_started(self) -> None:
         self.busy = True
 
+    def observe(self, mode: str | None) -> bool:
+        """Record the mode actually in effect, as read from the system.
+        Ignored while a switch is running (its result is authoritative).
+        Returns True if this changed what the policy believed."""
+        if self.busy or mode == self.current:
+            return False
+        self.current = mode
+        return True
+
     def switch_finished(self, mode: str | None, ok: bool, now: float) -> None:
         """``mode`` is the mode now believed in effect (None if unknown)."""
         self.busy = False
@@ -245,6 +255,21 @@ class Watcher:
         for mode, names in sorted(by_mode.items()):
             log.info("mode %s <- %s", mode, ", ".join(sorted(set(names))))
 
+    def check_state(self) -> None:
+        """Re-read which mode is in effect, so a switch made outside watch
+        (hotkey, `tvmode apply`, Win+P) does not leave the policy believing
+        a stale mode and ignoring the triggers that should undo it."""
+        if self.policy.busy:
+            return
+        before = self.policy.current
+        cur = current_mode(self.cfg.modes, self.backend)
+        if self.policy.observe(cur):
+            log.info(
+                "mode changed outside watch: %s -> %s",
+                before or "unknown",
+                cur or "unknown",
+            )
+
     # -- events ----------------------------------------------------------- #
     def on_event(self, ev: InputEvent) -> None:
         with self._lock:
@@ -307,6 +332,7 @@ class Watcher:
         self._listener = RawInputListener(
             self.on_event,
             on_devices_changed=self.refresh_devices,
+            on_state_check=self.check_state,
             on_error=lambda e: log.exception("callback failed: %s", e),
         )
         log.info("watching for input%s", " (dry run)" if self.dry_run else "")

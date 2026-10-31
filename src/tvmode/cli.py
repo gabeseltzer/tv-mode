@@ -122,7 +122,7 @@ def cmd_test(args, backend: Backend) -> int:
     try:
         res = apply(mode, backend, do_display=do_display, do_audio=do_audio)
         rc = _report(res)
-        if res.display_changed or res.audio_changed:
+        if res.ok and (res.display_changed or res.audio_changed):
             backend.sleep(args.seconds)
         else:
             _out("nothing changed; reverting immediately")

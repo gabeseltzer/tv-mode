@@ -62,6 +62,7 @@ class FakeBackend:
         self.slept = 0.0
         # Failure injection
         self.display_fail: Exception | None = None
+        self.display_check_fail: Exception | None = None
         self.audio_fail: Exception | None = None
         self.display_apply_silently_ignored = False
         self.audio_apply_silently_ignored = False
@@ -81,6 +82,13 @@ class FakeBackend:
             return
         for d in self.displays:
             d.active = d.target in wanted
+
+    def check_displays(self, wanted):
+        if self.display_check_fail:
+            raise self.display_check_fail
+        ok = {d.target for d in self.displays if d.available}
+        if not set(wanted) <= ok:
+            raise RuntimeError(f"targets not connected/available: {set(wanted) - ok}")
 
     def list_audio(self):
         return list(self.audio)

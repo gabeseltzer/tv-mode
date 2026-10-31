@@ -53,31 +53,83 @@ def test_dry_run_changes_nothing():
     assert any(m.startswith("would set default audio") for m in res.messages)
 
 
-def test_display_failure_does_not_block_audio():
+def test_display_failure_rolls_back_audio():
     b = FakeBackend()
     b.display_fail = RuntimeError("SetDisplayConfig failed with error 87")
     res = apply(TVM, b)
-    assert not res.ok
-    assert res.errors == ["display: SetDisplayConfig failed with error 87"]
-    assert res.audio_changed and b.default_audio_id() == "id-spk"
+    assert not res.ok and res.rolled_back
+    assert res.errors[0] == "display: SetDisplayConfig failed with error 87"
+    assert "rolled back" in res.errors[-1]
+    # audio was switched first, then put back
+    assert b.set_audio_calls == ["id-spk", "id-hp"]
+    assert b.default_audio_id() == "id-hp"
+    assert b.active_targets() == {MON1.target, MON2.target}
 
 
-def test_audio_failure_does_not_block_display():
+def test_audio_failure_never_touches_displays():
     b = FakeBackend()
     b.audio_fail = RuntimeError("boom")
     res = apply(TVM, b)
     assert not res.ok
-    assert res.display_changed and b.active_targets() == {TV.target}
-    assert res.errors == ["audio: boom"]
+    assert res.errors[0] == "audio: boom"
+    assert b.set_display_calls == []
+    assert b.active_targets() == {MON1.target, MON2.target}
 
 
-def test_verification_failure_is_reported_after_retries():
+def test_display_layout_rejected_up_front_changes_nothing():
+    b = FakeBackend()
+    b.display_check_fail = RuntimeError("SetDisplayConfig(validate) failed: 1610")
+    res = apply(TVM, b)
+    assert not res.ok
+    assert "cannot activate SAMSUNG" in res.errors[0]
+    assert "nothing was changed" in res.errors[0]
+    assert b.set_display_calls == [] and b.set_audio_calls == []
+
+
+def test_dry_run_reports_a_layout_windows_would_reject():
+    b = FakeBackend()
+    b.display_check_fail = RuntimeError("rejected")
+    res = apply(TVM, b, dry_run=True)
+    assert not res.ok and "cannot activate" in res.errors[0]
+
+
+def test_verification_failure_is_reported_after_retries_and_rolled_back():
     b = FakeBackend()
     b.display_apply_silently_ignored = True
     res = apply(TVM, b, verify_retries=3, verify_delay=0.5)
     assert not res.ok
     assert "did not take effect" in res.errors[0]
     assert b.slept == 1.5
+    assert b.default_audio_id() == "id-hp"
+
+
+def test_failed_rollback_is_reported():
+    b = FakeBackend()
+    b.display_fail = RuntimeError("display boom")
+    b.audio_apply_silently_ignored = False
+    # make the audio rollback fail too
+    orig = b.set_default_audio
+
+    def flaky(device_id):
+        if device_id == "id-hp":
+            raise RuntimeError("audio boom")
+        orig(device_id)
+
+    b.set_default_audio = flaky
+    res = apply(TVM, b, verify_retries=1, verify_delay=0)
+    assert not res.ok and not res.rolled_back
+    assert any(e.startswith("rollback failed: audio: audio boom") for e in res.errors)
+    assert "half switched" in res.errors[-1]
+
+
+def test_already_correct_half_is_left_alone():
+    b = FakeBackend()
+    b.set_default_audio("id-spk")  # audio already tv, displays still game
+    b.set_audio_calls.clear()
+    res = apply(TVM, b)
+    assert res.ok and res.display_changed and not res.audio_changed
+    assert b.set_audio_calls == []
+    assert any(m.startswith("audio already set") for m in res.messages)
 
 
 def test_tv_unplugged_is_a_clean_error():
@@ -86,6 +138,7 @@ def test_tv_unplugged_is_a_clean_error():
     res = apply(TVM, b)
     assert not res.ok
     assert "no display matches 'SAMSUNG'" in res.errors[0]
+    assert "nothing was changed" in res.errors[0]
     assert b.set_display_calls == [] and b.set_audio_calls == []
 
 

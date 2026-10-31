@@ -1,7 +1,7 @@
 import threading
 
 import pytest
-from fake_backend import TV, FakeBackend
+from fake_backend import MON1, MON2, TV, FakeBackend
 
 from tvmode.auto import (
     Policy,
@@ -11,6 +11,7 @@ from tvmode.auto import (
     map_devices,
 )
 from tvmode.config import AutoConfig, ConfigError, Trigger, parse_config
+from tvmode.modes import apply
 from tvmode.rawinput import InputDevice, InputEvent
 
 CONFIG = """
@@ -341,6 +342,39 @@ def test_watcher_failed_switch_logs_and_recovers(sync_threads):
     b.display_fail = None
     w.on_event(key(TV_KB.handle))
     assert w.policy.current == "tv"
+
+
+def test_watcher_picks_up_manual_switch_so_desk_keyboard_switches_back(
+    sync_threads,
+):
+    b = FakeBackend()
+    w, _ = make_watcher(b)
+    # user hit the tv hotkey; watch still believes "game"
+    apply(w.cfg.mode("tv"), b)
+    w.on_event(key(GAME_KB1.handle))
+    assert b.active_targets() == {TV.target}  # stale belief: ignored
+    w.check_state()  # what the display-change / poll timer does
+    assert w.policy.current == "tv"
+    w.on_event(key(GAME_KB1.handle))
+    assert b.active_targets() == {MON1.target, MON2.target}
+    assert w.policy.current == "game"
+
+
+def test_check_state_ignored_while_switching():
+    b = FakeBackend()
+    w, _ = make_watcher(b)
+    apply(w.cfg.mode("tv"), b)
+    w.policy.switch_started()
+    w.check_state()
+    assert w.policy.current == "game"
+
+
+def test_check_state_unknown_mode():
+    b = FakeBackend()
+    w, _ = make_watcher(b)
+    b.set_default_audio("id-cable")  # matches no mode
+    w.check_state()
+    assert w.policy.current is None
 
 
 def test_watcher_requires_auto_section():

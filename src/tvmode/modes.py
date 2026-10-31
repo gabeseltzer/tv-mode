@@ -20,6 +20,7 @@ class Backend(Protocol):
     def list_displays(self) -> list[DisplayInfo]: ...
     def active_targets(self) -> set[TargetKey]: ...
     def set_active_displays(self, wanted: set[TargetKey]) -> None: ...
+    def check_displays(self, wanted: set[TargetKey]) -> None: ...
     def list_audio(self) -> list[AudioDevice]: ...
     def default_audio_id(self) -> str | None: ...
     def set_default_audio(self, device_id: str) -> None: ...
@@ -41,6 +42,12 @@ class WindowsBackend:
         from . import display
 
         display.set_active_displays(wanted)
+
+    def check_displays(self, wanted: set[TargetKey]) -> None:
+        """Raise if ``wanted`` could not be made active; changes nothing."""
+        from . import display
+
+        display.set_active_displays(wanted, validate_only=True)
 
     def list_audio(self) -> list[AudioDevice]:
         from . import audio
@@ -79,6 +86,7 @@ class Result:
     ok: bool
     display_changed: bool = False
     audio_changed: bool = False
+    rolled_back: bool = False
     errors: list[str] = field(default_factory=list)
     messages: list[str] = field(default_factory=list)
 
@@ -181,53 +189,86 @@ def apply(
     verify_retries: int = 3,
     verify_delay: float = 1.0,
 ) -> Result:
-    """Switch to ``mode``. Display and audio are applied independently so a
-    failure in one does not prevent the other; both are verified afterwards."""
+    """Switch to ``mode``, all or nothing: display and audio either both end
+    up in the requested state or neither is changed.
+
+    Everything is checked before anything is touched (every matcher resolves
+    to a connected device, Windows accepts the display layout). Audio is
+    switched first because undoing it is invisible; if either half then fails
+    or does not verify, whatever already changed is rolled back."""
     res = Result(mode=mode.name, ok=True)
 
     try:
         plan = resolve(mode, backend, do_display=do_display, do_audio=do_audio)
     except MatchError as e:
         res.ok = False
-        res.errors.append(str(e))
+        res.errors.append(f"{e}; nothing was changed")
         return res
 
-    # ---- displays ------------------------------------------------------- #
-    if plan.displays:
-        wanted = {d.target for d in plan.displays}
-        names = ", ".join(d.label for d in plan.displays)
-        if not plan.display_change_needed:
-            res.messages.append(f"displays already set: {names}")
-        elif dry_run:
-            res.messages.append(f"would activate displays: {names}")
-        else:
-            _switch_displays(
-                backend,
-                wanted,
-                names,
-                res,
-                verify_retries=verify_retries,
-                verify_delay=verify_delay,
-            )
+    wanted = {d.target for d in plan.displays}
+    display_names = ", ".join(d.label for d in plan.displays)
 
-    # ---- audio ---------------------------------------------------------- #
-    if plan.audio:
+    # ---- preflight: refuse up front rather than switch half -------------- #
+    if plan.display_change_needed:
+        try:
+            backend.check_displays(wanted)
+        except Exception as e:  # noqa: BLE001
+            res.ok = False
+            res.errors.append(
+                f"display: cannot activate {display_names}: {e}; nothing was changed"
+            )
+            return res
+
+    if plan.displays and not plan.display_change_needed:
+        res.messages.append(f"displays already set: {display_names}")
+    if plan.audio and not plan.audio_change_needed:
+        res.messages.append(f"audio already set: {plan.audio.label}")
+
+    if dry_run:
+        if plan.display_change_needed:
+            res.messages.append(f"would activate displays: {display_names}")
+        if plan.audio and plan.audio_change_needed:
+            res.messages.append(f"would set default audio: {plan.audio.label}")
+        return res
+
+    if not (plan.display_change_needed or plan.audio_change_needed):
+        return res
+
+    before = snapshot(backend)
+    vr, vd = verify_retries, verify_delay
+
+    if plan.audio and plan.audio_change_needed:
         a = plan.audio
-        if not plan.audio_change_needed:
-            res.messages.append(f"audio already set: {a.label}")
-        elif dry_run:
-            res.messages.append(f"would set default audio: {a.label}")
-        else:
-            _switch_audio(
-                backend,
-                a.id,
-                a.label,
-                res,
-                verify_retries=verify_retries,
-                verify_delay=verify_delay,
-            )
+        _switch_audio(backend, a.id, a.label, res, verify_retries=vr, verify_delay=vd)
+    if res.ok and plan.display_change_needed:
+        _switch_displays(
+            backend, wanted, display_names, res, verify_retries=vr, verify_delay=vd
+        )
 
+    if not res.ok:
+        back = restore(
+            before,
+            backend,
+            do_display=do_display,
+            do_audio=do_audio,
+            verify_retries=vr,
+            verify_delay=vd,
+        )
+        _record_rollback(res, back)
     return res
+
+
+def _record_rollback(res: Result, back: Result) -> None:
+    """Fold the outcome of undoing a partly applied switch into ``res``."""
+    changed = [m for m in back.messages if "already set" not in m]
+    if back.ok:
+        res.rolled_back = True
+        if changed:
+            res.messages.append("rolled back: " + "; ".join(changed))
+        res.errors.append("nothing was changed (rolled back)")
+    else:
+        res.errors.extend(f"rollback failed: {e}" for e in back.errors)
+        res.errors.append("setup may be half switched; check `tvmode status`")
 
 
 @dataclass(frozen=True)

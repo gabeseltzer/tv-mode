@@ -17,8 +17,11 @@ state the machine is currently in.
   monitors are made active and every other one is turned off, so video goes
   *only* where you asked.
 - Audio is switched by setting the default playback device for all roles.
-- Every switch is verified after it is applied, and each half is independent:
-  if the TV is unplugged the audio still switches and you get a clear error.
+- Switching is all or nothing: display and audio both change or neither does.
+  Everything is checked first (every device is connected, Windows accepts the
+  display layout), and if a half fails or doesn't verify afterwards, whatever
+  already changed is rolled back. If the TV is off/unplugged you get a clear
+  error and your setup is untouched.
 
 Requires Windows 10/11 and Python 3.12+. Licensed GPL-3.0-or-later.
 
@@ -96,8 +99,10 @@ keyboards = ["VID_04D9&PID_FC40"]
   `wiggle_reversals` times on one axis. Sensor drift and a bumped desk are
   one-directional and never qualify; a deliberate back-and-forth does.
 * Input from devices tied to the mode already in effect is ignored, as is
-  everything during the `cooldown` after a switch. Switching manually with
-  `tvmode apply` is noticed and not fought.
+  everything during the `cooldown` after a switch.
+* Switching some other way (hotkey, `tvmode apply`, Win+P) is noticed: watch
+  re-reads the actual mode a second after any display change and every 15
+  seconds, so the other mode's devices will switch back as expected.
 
 Run it at logon with Task Scheduler (`uv run tvmode watch`), or from a
 terminal while trying it out; Ctrl+C stops it.
