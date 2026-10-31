@@ -17,6 +17,9 @@ dependencies = [
 [project.scripts]
 tvmode = "tvmode.cli:main"
 
+[project.gui-scripts]
+tvmodew = "tvmode.cli:main_gui"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

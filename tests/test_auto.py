@@ -13,6 +13,13 @@ from tvmode.auto import (
 from tvmode.config import AutoConfig, ConfigError, Trigger, parse_config
 from tvmode.modes import apply
 from tvmode.rawinput import InputDevice, InputEvent
+from tvmode.tray import (
+    FALLBACK_COLORS,
+    MODE_COLORS,
+    UNKNOWN_COLOR,
+    mode_color,
+    monitor_pixels,
+)
 
 CONFIG = """
 [modes.game]
@@ -449,6 +456,72 @@ def test_watcher_gives_up_after_pending_timeout(sync_threads):
     w.check_state()
     assert w.policy.pending is None
     assert b.active_targets() == {TV.target}
+
+
+def test_tray_state_reflects_mode_pending_and_pause():
+    b = FakeBackend()
+    w, _ = make_watcher(b)
+    st = w.tray_state()
+    assert st.tooltip == "tvmode: game"
+    assert st.color == MODE_COLORS["game"]
+    labels = {m.label: m for m in st.menu if m.label}
+    assert labels["Switch to game"].checked and not labels["Switch to tv"].checked
+    assert labels["Current mode: game"].command is None
+    w.policy.pending = "tv"
+    w.on_tray_command("pause")
+    st = w.tray_state()
+    assert "waiting for tv" not in st.tooltip  # pausing drops the wait
+    assert st.tooltip.endswith("paused")
+    assert {m.label: m for m in st.menu}["Pause auto-switching"].checked
+
+
+def test_paused_watcher_ignores_input(sync_threads):
+    b = FakeBackend()
+    w, _ = make_watcher(b)
+    w.on_tray_command("pause")
+    w.on_event(key(TV_KB.handle))
+    assert b.set_display_calls == []
+    w.on_tray_command("pause")  # resume
+    w.on_event(key(TV_KB.handle))
+    assert b.active_targets() == {TV.target}
+
+
+def test_tray_switch_command_switches_even_in_cooldown(sync_threads):
+    b = FakeBackend()
+    w, clock = make_watcher(b)
+    w.on_event(key(TV_KB.handle))
+    clock["t"] = 1.0  # inside the cooldown
+    w.on_tray_command("switch:game")
+    assert b.active_targets() == {MON1.target, MON2.target}
+    assert w.policy.current == "game"
+
+
+def test_tray_quit_stops_listener():
+    b = FakeBackend()
+    w, _ = make_watcher(b)
+
+    class L:
+        stopped = False
+
+        def stop(self):
+            self.stopped = True
+
+    w._listener = L()
+    w.on_tray_command("quit")
+    assert w._listener.stopped
+
+
+def test_monitor_pixels_shape():
+    px = monitor_pixels(32, (255, 0, 0))
+    assert len(px) == 32 * 32 * 4
+    centre = (16 * 32 + 16) * 4
+    assert px[centre : centre + 4] == bytes((0, 0, 255, 255))  # BGRA red
+    assert px[0:4] == bytes(4)  # corner transparent
+
+
+def test_mode_color_fallbacks():
+    assert mode_color(None, ["game", "tv"]) == UNKNOWN_COLOR
+    assert mode_color("couch", ["game", "tv", "couch"]) == FALLBACK_COLORS[0]
 
 
 def test_watcher_requires_auto_section():

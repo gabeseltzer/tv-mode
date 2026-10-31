@@ -409,6 +409,10 @@ class RawInputListener:
     one call) and every ``poll_interval`` seconds, so the owner can re-read
     state that something else may have changed behind its back.
 
+    ``on_window(hwnd)`` is called once the hidden window exists, and
+    ``on_message(hwnd, msg, wparam, lparam)`` sees every message first and
+    may return a result to claim it (used by the tray icon).
+
     Exceptions raised by the callbacks are passed to ``on_error`` (default:
     ignored) so they can never kill the message pump."""
 
@@ -420,7 +424,11 @@ class RawInputListener:
         on_state_check: Callable[[], None] | None = None,
         display_settle: float = 1.0,
         poll_interval: float | None = 15.0,
+        on_window: Callable[[int], None] | None = None,
+        on_message: Callable[[int, int, int, int], int | None] | None = None,
     ) -> None:
+        self._on_window = on_window
+        self._on_message = on_message
         self._on_event = on_event
         self._on_devices_changed = on_devices_changed
         self._on_state_check = on_state_check
@@ -442,6 +450,15 @@ class RawInputListener:
     # -- window procedure ------------------------------------------------- #
     def _proc(self, hwnd, msg, wparam, lparam):
         u = _user32()
+        if self._on_message is not None:
+            try:
+                r = self._on_message(hwnd, msg, wparam, lparam)
+            except BaseException as e:  # noqa: BLE001 - never kill the pump
+                r = None
+                if self._on_error is not None:
+                    self._on_error(e)
+            if r is not None:
+                return r
         if msg == WM_INPUT:
             self._handle_input(lparam)
             return u.DefWindowProcW(hwnd, msg, wparam, lparam)  # required
@@ -534,6 +551,8 @@ class RawInputListener:
             self._register(self._hwnd)
             if self._on_state_check is not None and self._poll_ms:
                 u.SetTimer(self._hwnd, TIMER_POLL, self._poll_ms, None)
+            if self._on_window is not None:
+                self._on_window(self._hwnd)
             msg = wintypes.MSG()
             while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
                 u.TranslateMessage(ctypes.byref(msg))

@@ -110,8 +110,18 @@ keyboards = ["VID_04D9&PID_FC40"]
   So you can wiggle the desk mouse first and plug the monitors in after.
   Touching the current mode's devices cancels the wait.
 
-Run it at logon with Task Scheduler (`uv run tvmode watch`), or from a
-terminal while trying it out; Ctrl+C stops it.
+While it runs, a small monitor icon sits in the notification area (bottom
+right of the taskbar; it may be under the ^ overflow arrow). Its colour shows
+the mode (blue = game, orange = tv, grey = unknown) and hovering shows the
+mode by name. Right-click (or left-click) it to switch modes by hand, pause
+auto-switching, open the log, or **Quit**. `--no-tray` turns it off.
+
+`tvmodew` is the same thing without a console window, logging to
+`%LOCALAPPDATA%\tvmode\watch.log`; that's the one to run at logon. With
+Task Scheduler: *Create Task* -> trigger *At log on* -> action *Start a
+program* `<repo>\.venv\Scripts\tvmodew.exe`. Only one watcher can run at a
+time; a second one exits immediately. From a terminal, `uv run tvmode watch`
+works too, and Ctrl+C stops it.
 
 ## Hotkeys
 

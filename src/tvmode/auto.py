@@ -17,14 +17,17 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import threading
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .config import AutoConfig, Config, Trigger
 from .modes import Backend, apply, current_mode
 from .rawinput import InputDevice, InputEvent, RawInputListener
+from .tray import SEPARATOR, MenuItem, Tray, TrayState, mode_color
 
 log = logging.getLogger("tvmode.auto")
 
@@ -259,6 +262,7 @@ class Watcher:
         debug: bool = False,
         list_devices: Callable[[], list[InputDevice]] | None = None,
         clock: Callable[[], float] | None = None,
+        log_path: Path | None = None,
     ) -> None:
         if cfg.auto is None:
             raise ValueError("config has no [auto] section")
@@ -282,6 +286,10 @@ class Watcher:
         self._devices: dict[int, InputDevice] = {}
         self._mapping: dict[int, str] = {}
         self._listener: RawInputListener | None = None
+        self._device_summary: list[str] = []
+        self.paused = False
+        self.log_path = log_path
+        self._tray: Tray | None = None
 
     # -- devices ---------------------------------------------------------- #
     def refresh_devices(self) -> None:
@@ -296,8 +304,14 @@ class Watcher:
         for h, mode in mapping.items():
             d = self._devices[h]
             by_mode.setdefault(mode, []).append(f"{d.kind}:{d.vid_pid or d.label}")
-        for mode, names in sorted(by_mode.items()):
-            log.info("mode %s <- %s", mode, ", ".join(sorted(set(names))))
+        summary = [
+            f"mode {mode} <- {', '.join(sorted(set(names)))}"
+            for mode, names in sorted(by_mode.items())
+        ]
+        if summary != self._device_summary:  # Windows repeats arrivals at startup
+            self._device_summary = summary
+            for line in summary:
+                log.info(line)
 
     def check_state(self) -> None:
         """Re-read which mode is in effect, so a switch made outside watch
@@ -313,6 +327,9 @@ class Watcher:
                 before or "unknown",
                 cur or "unknown",
             )
+            self._tray_changed()
+        if self.paused:
+            return
         waiting = self.policy.pending
         target = self.policy.due_retry(self._clock())
         if target is None:
@@ -321,6 +338,7 @@ class Watcher:
                     log.info("now in %s; no longer waiting", waiting)
                 else:
                     log.info("gave up waiting for the %s devices", waiting)
+                self._tray_changed()
             return
         log.debug("hardware changed; retrying switch to %s", target)
         self._start_switch(target, retry=True)
@@ -340,7 +358,7 @@ class Watcher:
                 log.debug("%s -> %s  dx=%+d dy=%+d", who, mode or "-", ev.dx, ev.dy)
             elif ev.key_down:
                 log.debug("%s -> %s  key down", who, mode or "-")
-        if mode is None:
+        if mode is None or self.paused:
             return
         decision = self.policy.feed(ev, mode, self._clock())
         if decision is None:
@@ -402,21 +420,92 @@ class Watcher:
                 devices_missing=missing,
                 retry=retry,
             )
+            self._tray_changed()
+
+    # -- tray ------------------------------------------------------------- #
+    def tray_state(self) -> TrayState:
+        cur = self.policy.current
+        pending = self.policy.pending
+        tip = f"tvmode: {cur or 'unknown mode'}"
+        if pending:
+            tip += f" (waiting for {pending} devices)"
+        if self.paused:
+            tip += " - paused"
+        if self.dry_run:
+            tip += " - dry run"
+        menu = [MenuItem(f"Current mode: {cur or 'unknown'}"), SEPARATOR]
+        for name in self.cfg.modes:
+            menu.append(
+                MenuItem(
+                    f"Switch to {name}",
+                    f"switch:{name}",
+                    checked=name == cur,
+                    enabled=not self.policy.busy,
+                )
+            )
+        menu += [
+            SEPARATOR,
+            MenuItem("Pause auto-switching", "pause", checked=self.paused),
+            MenuItem("Open log", "log", enabled=self.log_path is not None),
+            SEPARATOR,
+            MenuItem("Quit", "quit"),
+        ]
+        return TrayState(tip, mode_color(cur, list(self.cfg.modes)), menu)
+
+    def on_tray_command(self, command: str) -> None:
+        if command.startswith("switch:"):
+            target = command.split(":", 1)[1]
+            if self.policy.busy:
+                return
+            log.info("tray -> switching to %s", target)
+            self.policy.pending = None
+            self._start_switch(target)
+        elif command == "pause":
+            self.paused = not self.paused
+            if self.paused:
+                self.policy.pending = None
+            log.info("auto-switching %s", "paused" if self.paused else "resumed")
+            self._tray_changed()
+        elif command == "log" and self.log_path is not None:
+            os.startfile(self.log_path)  # type: ignore[attr-defined]  # Windows only
+        elif command == "quit":
+            log.info("quit from tray")
+            self.stop()
+
+    def _tray_changed(self) -> None:
+        if self._tray is not None:
+            self._tray.request_update()
+
+    def _attach_tray(self, hwnd: int) -> None:
+        if self._tray is None:
+            return
+        try:
+            self._tray.attach(hwnd)
+        except Exception:
+            log.exception("could not add the tray icon; continuing without it")
+            self._tray = None
 
     # -- lifecycle -------------------------------------------------------- #
-    def run(self) -> None:
+    def run(self, *, tray: bool = False) -> None:
         self.policy.current = current_mode(self.cfg.modes, self.backend)
         log.info("current mode: %s", self.policy.current or "unknown")
         self.refresh_devices()
+        if tray:
+            self._tray = Tray(self.tray_state, self.on_tray_command)
         self._listener = RawInputListener(
             self.on_event,
             on_devices_changed=self.refresh_devices,
             on_state_check=self.check_state,
             display_settle=2.0,  # give a just-plugged monitor time to show up
             on_error=lambda e: log.exception("callback failed: %s", e),
+            on_window=self._attach_tray,
+            on_message=self._tray_message,
         )
         log.info("watching for input%s", " (dry run)" if self.dry_run else "")
         self._listener.run()
+
+    def _tray_message(self, hwnd: int, msg: int, wp: int, lp: int) -> int | None:
+        return self._tray.handle(hwnd, msg, wp, lp) if self._tray else None
 
     def stop(self) -> None:
         if self._listener is not None:

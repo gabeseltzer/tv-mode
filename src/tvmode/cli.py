@@ -7,6 +7,7 @@ Exit codes: 0 success, 1 a switch failed or was only partially applied,
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -153,25 +154,64 @@ def cmd_inputs(args, backend: Backend) -> int:
     return EXIT_OK
 
 
+def default_log_path() -> Path:
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home())
+    return Path(base) / "tvmode" / "watch.log"
+
+
+def _single_instance() -> object | None:
+    """Hold a named mutex for the life of the process. Returns None if
+    another `tvmode watch` already holds it."""
+    import ctypes
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateMutexW.restype = ctypes.c_void_p
+    handle = k32.CreateMutexW(None, False, "Local\\tvmode-watch")
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        return None
+    return handle
+
+
 def cmd_watch(args, backend: Backend) -> int:
-    """Run the auto-switcher until Ctrl+C."""
+    """Run the auto-switcher until Ctrl+C or Quit in the tray menu."""
     import logging
+    from logging.handlers import RotatingFileHandler
 
     from .auto import Watcher
 
+    fmt = "%(asctime)s %(levelname)-7s %(message)s"
+    handlers: list[logging.Handler] = []
+    if not args.no_console:
+        h: logging.Handler = logging.StreamHandler()
+        h.setFormatter(logging.Formatter(fmt, "%H:%M:%S"))
+        handlers.append(h)
+    log_path: Path | None = args.log_file
+    if log_path is not None:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        h = RotatingFileHandler(
+            log_path, maxBytes=1_000_000, backupCount=1, encoding="utf-8"
+        )
+        h.setFormatter(logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S"))
+        handlers.append(h)
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(message)s",
-        datefmt="%H:%M:%S",
+        handlers=handlers,
+        force=True,
     )
     cfg = _load(args)
     if cfg.auto is None:
         raise ConfigError(
             f"no [auto] section in {cfg.path}; see README for the format"
         )
-    w = Watcher(cfg, backend, dry_run=args.dry_run, debug=args.debug)
+    mutex = _single_instance()
+    if mutex is None:
+        print("tvmode watch is already running (see the tray icon)", file=sys.stderr)
+        return EXIT_FAILED
+    w = Watcher(
+        cfg, backend, dry_run=args.dry_run, debug=args.debug, log_path=log_path
+    )
     try:
-        w.run()
+        w.run(tray=not args.no_tray)
     except KeyboardInterrupt:
         _out("stopping")
     return EXIT_OK
@@ -267,8 +307,37 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--debug", action="store_true", help="log every input event and its device"
     )
+    s.add_argument(
+        "--no-tray", action="store_true", help="don't show a notification-area icon"
+    )
+    s.add_argument(
+        "--log-file",
+        type=Path,
+        default=None,
+        help="also log to this file (tvmodew logs to %%LOCALAPPDATA%%\\tvmode\\watch.log)",
+    )
+    s.add_argument("--no-console", action="store_true", help=argparse.SUPPRESS)
     s.set_defaults(func=cmd_watch)
     return p
+
+
+def main_gui() -> int:
+    """Entry point for `tvmodew`: `tvmode watch` with no console window,
+    logging to a file, with errors shown in a message box."""
+    import ctypes
+    import io
+
+    if sys.stdout is None:
+        sys.stdout = io.StringIO()
+    if sys.stderr is None:
+        sys.stderr = io.StringIO()
+    err = sys.stderr
+    argv = ["watch", "--no-console", "--log-file", str(default_log_path())]
+    argv += sys.argv[1:]
+    rc = main(argv)
+    if rc != EXIT_OK and isinstance(err, io.StringIO) and err.getvalue().strip():
+        ctypes.windll.user32.MessageBoxW(None, err.getvalue().strip(), "tvmode", 0x10)
+    return rc
 
 
 def main(argv: list[str] | None = None, backend: Backend | None = None) -> int:
