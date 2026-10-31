@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 from .config import AutoConfig, Config, Trigger
 from .modes import Backend, apply, current_mode
-from .rawinput import InputDevice, InputEvent
+from .rawinput import InputDevice, InputEvent, RawInputListener
 
 log = logging.getLogger("tvmode.auto")
 
@@ -101,12 +101,19 @@ class Policy:
 
     ``current`` is the mode believed to be in effect (None = unknown).
     Triggers for the current mode are ignored; so is everything while a
-    switch is running or during the cooldown after one."""
+    switch is running or during the cooldown after one.
+
+    ``pending`` is a switch that failed only because its devices were not
+    connected (monitors unplugged, TV off). It is retried whenever hardware
+    changes until ``pending_timeout`` runs out, it succeeds, or a trigger for
+    the current mode says the user is staying put."""
 
     auto: AutoConfig
     current: str | None = None
     busy: bool = False
     cooldown_until: float = float("-inf")
+    pending: str | None = None
+    pending_until: float = float("-inf")
     _wiggles: dict[int, WiggleDetector] = field(default_factory=dict)
 
     def _wiggle(self, handle: int) -> WiggleDetector:
@@ -132,7 +139,12 @@ class Policy:
         else:
             return None
 
-        if self.busy or now < self.cooldown_until or mode == self.current:
+        if self.busy:
+            return None
+        if mode == self.current:
+            self.pending = None  # back on this mode's devices: staying put
+            return None
+        if now < self.cooldown_until:
             return None
         return Decision(mode=mode, reason=reason)
 
@@ -148,14 +160,45 @@ class Policy:
         self.current = mode
         return True
 
-    def switch_finished(self, mode: str | None, ok: bool, now: float) -> None:
-        """``mode`` is the mode now believed in effect (None if unknown)."""
+    def switch_finished(
+        self,
+        mode: str | None,
+        ok: bool,
+        now: float,
+        *,
+        target: str | None = None,
+        devices_missing: bool = False,
+        retry: bool = False,
+    ) -> None:
+        """``mode`` is the mode now believed in effect (None if unknown).
+        ``target`` is the mode that was attempted; ``devices_missing`` means
+        it failed only because something wasn't connected, so it stays
+        pending. ``retry`` marks a retry of a pending switch: a failed retry
+        changed nothing, so it neither starts a cooldown nor resets wiggles."""
         self.busy = False
-        self.cooldown_until = now + self.auto.cooldown
         if ok:
             self.current = mode
-        for w in self._wiggles.values():
-            w.reset()
+            self.pending = None
+        elif devices_missing and target is not None:
+            if self.pending != target:
+                self.pending = target
+                self.pending_until = now + self.auto.pending_timeout
+        else:
+            self.pending = None
+        if ok or not retry:
+            self.cooldown_until = now + self.auto.cooldown
+            for w in self._wiggles.values():
+                w.reset()
+
+    def due_retry(self, now: float) -> str | None:
+        """The pending mode to retry now, if any. Drops it once expired or
+        once that mode is in effect anyway."""
+        if self.pending is None or self.busy:
+            return None
+        if now >= self.pending_until or self.pending == self.current:
+            self.pending = None
+            return None
+        return self.pending
 
 
 # --------------------------------------------------------------------------- #
@@ -220,6 +263,7 @@ class Watcher:
         if cfg.auto is None:
             raise ValueError("config has no [auto] section")
         self.cfg = cfg
+        self.auto: AutoConfig = cfg.auto
         self.backend = backend
         self.dry_run = dry_run
         self.debug = debug
@@ -237,12 +281,12 @@ class Watcher:
         self._lock = threading.Lock()
         self._devices: dict[int, InputDevice] = {}
         self._mapping: dict[int, str] = {}
-        self._listener = None
+        self._listener: RawInputListener | None = None
 
     # -- devices ---------------------------------------------------------- #
     def refresh_devices(self) -> None:
         devices = self._list_devices()
-        mapping, warnings = map_devices(devices, self.cfg.auto.triggers)
+        mapping, warnings = map_devices(devices, self.auto.triggers)
         with self._lock:
             self._devices = {d.handle: d for d in devices}
             self._mapping = mapping
@@ -269,6 +313,17 @@ class Watcher:
                 before or "unknown",
                 cur or "unknown",
             )
+        waiting = self.policy.pending
+        target = self.policy.due_retry(self._clock())
+        if target is None:
+            if waiting is not None and self.policy.pending is None:
+                if self.policy.current == waiting:
+                    log.info("now in %s; no longer waiting", waiting)
+                else:
+                    log.info("gave up waiting for the %s devices", waiting)
+            return
+        log.debug("hardware changed; retrying switch to %s", target)
+        self._start_switch(target, retry=True)
 
     # -- events ----------------------------------------------------------- #
     def on_event(self, ev: InputEvent) -> None:
@@ -291,16 +346,20 @@ class Watcher:
         if decision is None:
             return
         log.info("%s on %s device -> switching to %s", decision.reason, mode, mode)
+        self._start_switch(decision.mode)
+
+    def _start_switch(self, target: str, *, retry: bool = False) -> None:
         self.policy.switch_started()
         threading.Thread(
             target=self._switch,
-            args=(decision.mode,),
+            args=(target, retry),
             daemon=True,
             name="tvmode-switch",
         ).start()
 
-    def _switch(self, target: str) -> None:
+    def _switch(self, target: str, retry: bool = False) -> None:
         ok = True
+        missing = False
         result_mode: str | None = target
         try:
             # Someone may have switched manually since we last looked.
@@ -309,23 +368,43 @@ class Watcher:
                 log.info("already in %s", target)
                 return
             res = apply(self.cfg.mode(target), self.backend, dry_run=self.dry_run)
+            ok = res.ok
+            missing = res.devices_missing and not self.dry_run
+            if retry and missing:
+                # Still not connected; stay quiet, the next change retries.
+                for e in res.errors:
+                    log.debug(e)
+                return
+            if retry and ok:
+                log.info("devices for %s connected; switching", target)
             for m in res.messages:
                 log.info(m)
             for e in res.errors:
                 log.error(e)
-            ok = res.ok
+            if missing:
+                log.info(
+                    "will switch to %s when its devices are connected "
+                    "(waiting up to %gs)",
+                    target,
+                    self.auto.pending_timeout,
+                )
             if self.dry_run:
                 result_mode = cur
         except Exception:
             log.exception("switch to %s failed", target)
             ok = False
         finally:
-            self.policy.switch_finished(result_mode if ok else None, ok, self._clock())
+            self.policy.switch_finished(
+                result_mode if ok else None,
+                ok,
+                self._clock(),
+                target=target,
+                devices_missing=missing,
+                retry=retry,
+            )
 
     # -- lifecycle -------------------------------------------------------- #
     def run(self) -> None:
-        from .rawinput import RawInputListener
-
         self.policy.current = current_mode(self.cfg.modes, self.backend)
         log.info("current mode: %s", self.policy.current or "unknown")
         self.refresh_devices()
@@ -333,6 +412,7 @@ class Watcher:
             self.on_event,
             on_devices_changed=self.refresh_devices,
             on_state_check=self.check_state,
+            display_settle=2.0,  # give a just-plugged monitor time to show up
             on_error=lambda e: log.exception("callback failed: %s", e),
         )
         log.info("watching for input%s", " (dry run)" if self.dry_run else "")

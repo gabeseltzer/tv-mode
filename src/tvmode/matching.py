@@ -9,6 +9,10 @@ class MatchError(LookupError):
     pass
 
 
+class DeviceMissing(MatchError):
+    """Nothing matched: the device is unplugged, off, or not detected yet."""
+
+
 def match_one[T](
     matcher: str,
     candidates: Iterable[T],
@@ -42,6 +46,6 @@ def match_one[T](
         return partial[0]
     if not partial:
         available = ", ".join(label(c) for c in cands) or "(none)"
-        raise MatchError(f"no {kind} matches {matcher!r}; available: {available}")
+        raise DeviceMissing(f"no {kind} matches {matcher!r}; available: {available}")
     names = ", ".join(label(c) for c in partial)
     raise MatchError(f"{kind} matcher {matcher!r} is ambiguous; matches: {names}")

@@ -54,6 +54,7 @@ class AutoConfig:
     wiggle_window: float = 1.5
     wiggle_distance: float = 300.0
     wiggle_reversals: int = 2
+    pending_timeout: float = 300.0
 
 
 @dataclass
@@ -146,6 +147,7 @@ def _parse_auto(raw, modes: dict[str, Mode]) -> AutoConfig:
         "wiggle_window",
         "wiggle_distance",
         "wiggle_reversals",
+        "pending_timeout",
     }
     if unknown:
         raise ConfigError(f"[auto] has unknown keys: {sorted(unknown)}")
@@ -155,6 +157,7 @@ def _parse_auto(raw, modes: dict[str, Mode]) -> AutoConfig:
         wiggle_window=float(_number(raw, "auto", "wiggle_window", 1.5)),
         wiggle_distance=float(_number(raw, "auto", "wiggle_distance", 300.0)),
         wiggle_reversals=_number(raw, "auto", "wiggle_reversals", 2, integer=True),
+        pending_timeout=float(_number(raw, "auto", "pending_timeout", 300.0)),
     )
 
     trig_raw = raw.get("modes")

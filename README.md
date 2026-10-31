@@ -78,6 +78,7 @@ cooldown = 30            # seconds to ignore triggers after a switch
 wiggle_window = 1.5      # seconds of mouse motion considered
 wiggle_distance = 300    # total travel (counts) needed in that window
 wiggle_reversals = 2     # direction changes needed in that window
+pending_timeout = 300    # seconds to wait for a mode's devices to be connected
 
 [auto.modes.game]
 keyboards = ["VID_308F&PID_0011"]   # any key press on this keyboard -> game
@@ -103,6 +104,11 @@ keyboards = ["VID_04D9&PID_FC40"]
 * Switching some other way (hotkey, `tvmode apply`, Win+P) is noticed: watch
   re-reads the actual mode a second after any display change and every 15
   seconds, so the other mode's devices will switch back as expected.
+* If a switch fails only because the mode's displays/audio aren't connected
+  yet (monitors unplugged, TV off), watch waits for them: it retries a couple
+  of seconds after any hardware change, for up to `pending_timeout` seconds.
+  So you can wiggle the desk mouse first and plug the monitors in after.
+  Touching the current mode's devices cancels the wait.
 
 Run it at logon with Task Scheduler (`uv run tvmode watch`), or from a
 terminal while trying it out; Ctrl+C stops it.

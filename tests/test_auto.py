@@ -377,6 +377,80 @@ def test_check_state_unknown_mode():
     assert w.policy.current is None
 
 
+def test_policy_pending_switch_lifecycle():
+    p = Policy(auto(), current="tv")
+    p.switch_started()
+    p.switch_finished(None, ok=False, now=0.0, target="game", devices_missing=True)
+    assert p.pending == "game"
+    assert p.due_retry(10.0) == "game"
+    # a failed retry keeps it pending and does not start a new cooldown
+    p.switch_started()
+    p.switch_finished(
+        None, ok=False, now=40.0, target="game", devices_missing=True, retry=True
+    )
+    assert p.pending == "game" and p.cooldown_until == 30.0
+    assert p.due_retry(299.0) == "game"
+    assert p.due_retry(300.0) is None and p.pending is None  # timed out
+
+
+def test_policy_touching_current_mode_cancels_pending():
+    p = Policy(auto(), current="tv")
+    p.switch_started()
+    p.switch_finished(None, ok=False, now=0.0, target="game", devices_missing=True)
+    assert p.feed(key(TV_KB.handle), "tv", 5.0) is None
+    assert p.pending is None
+
+
+def test_policy_other_failures_are_not_retried():
+    p = Policy(auto(), current="tv")
+    p.switch_started()
+    p.switch_finished(None, ok=False, now=0.0, target="game")
+    assert p.pending is None and p.due_retry(1.0) is None
+
+
+def test_watcher_switches_once_monitors_are_plugged_in(sync_threads):
+    b = FakeBackend()
+    w, clock = make_watcher(b)
+    apply(w.cfg.mode("tv"), b)
+    w.check_state()
+    assert w.policy.current == "tv"
+    # monitors unplugged
+    b.displays[0].available = b.displays[1].available = False
+    calls = (len(b.set_display_calls), len(b.set_audio_calls))
+    clock["t"] = 100.0
+    w.on_event(key(GAME_KB1.handle))
+    assert (len(b.set_display_calls), len(b.set_audio_calls)) == calls  # untouched
+    assert b.active_targets() == {TV.target}
+    assert w.policy.pending == "game"
+    # hardware changes but monitors still missing: quiet retry, no change
+    clock["t"] = 105.0
+    w.check_state()
+    assert b.active_targets() == {TV.target} and w.policy.pending == "game"
+    # monitors plugged in (still inside the cooldown of the failed attempt)
+    b.displays[0].available = b.displays[1].available = True
+    clock["t"] = 110.0
+    w.check_state()
+    assert b.active_targets() == {MON1.target, MON2.target}
+    assert b.default_audio_id() == "id-hp"
+    assert w.policy.current == "game" and w.policy.pending is None
+
+
+def test_watcher_gives_up_after_pending_timeout(sync_threads):
+    b = FakeBackend()
+    w, clock = make_watcher(b)
+    apply(w.cfg.mode("tv"), b)
+    w.check_state()
+    b.displays[0].available = False
+    clock["t"] = 100.0
+    w.on_event(key(GAME_KB1.handle))
+    assert w.policy.pending == "game"
+    b.displays[0].available = True
+    clock["t"] = 100.0 + w.auto.pending_timeout
+    w.check_state()
+    assert w.policy.pending is None
+    assert b.active_targets() == {TV.target}
+
+
 def test_watcher_requires_auto_section():
     cfg = parse_config(CONFIG.split("[auto]")[0])
     with pytest.raises(ValueError, match="no \\[auto\\]"):

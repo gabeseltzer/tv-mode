@@ -48,6 +48,8 @@ WM_INPUT = 0x00FF
 WM_INPUT_DEVICE_CHANGE = 0x00FE
 WM_CLOSE = 0x0010
 WM_DISPLAYCHANGE = 0x007E
+WM_DEVICECHANGE = 0x0219
+DBT_DEVNODES_CHANGED = 0x0007
 WM_TIMER = 0x0113
 WM_DESTROY = 0x0002
 
@@ -402,9 +404,10 @@ class RawInputListener:
     called when a device arrives or is removed.
 
     ``on_state_check`` (optional) is called ``display_settle`` seconds after
-    the display configuration changes (debounced: a burst of changes gives one
-    call) and every ``poll_interval`` seconds, so the owner can re-read state
-    that something else may have changed behind its back.
+    the display configuration or the set of attached hardware changes (a
+    monitor plugged in, a TV turned on; debounced, so a burst of changes gives
+    one call) and every ``poll_interval`` seconds, so the owner can re-read
+    state that something else may have changed behind its back.
 
     Exceptions raised by the callbacks are passed to ``on_error`` (default:
     ignored) so they can never kill the message pump."""
@@ -446,7 +449,9 @@ class RawInputListener:
             if self._on_devices_changed is not None:
                 self._guard(self._on_devices_changed)
             return 0
-        if msg == WM_DISPLAYCHANGE:
+        if msg == WM_DISPLAYCHANGE or (
+            msg == WM_DEVICECHANGE and wparam == DBT_DEVNODES_CHANGED
+        ):
             if self._on_state_check is not None:
                 # Restarting the timer debounces the burst a switch produces.
                 u.SetTimer(hwnd, TIMER_SETTLE, self._display_settle_ms, None)

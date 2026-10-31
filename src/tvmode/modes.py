@@ -13,7 +13,7 @@ from typing import Protocol
 from .audio import AudioDevice
 from .config import Mode
 from .display import DisplayInfo, TargetKey
-from .matching import MatchError, match_one
+from .matching import DeviceMissing, MatchError, match_one
 
 
 class Backend(Protocol):
@@ -87,6 +87,7 @@ class Result:
     display_changed: bool = False
     audio_changed: bool = False
     rolled_back: bool = False
+    devices_missing: bool = False  # failed only because something isn't connected
     errors: list[str] = field(default_factory=list)
     messages: list[str] = field(default_factory=list)
 
@@ -202,6 +203,7 @@ def apply(
         plan = resolve(mode, backend, do_display=do_display, do_audio=do_audio)
     except MatchError as e:
         res.ok = False
+        res.devices_missing = isinstance(e, DeviceMissing)
         res.errors.append(f"{e}; nothing was changed")
         return res
 
