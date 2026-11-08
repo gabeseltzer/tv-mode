@@ -72,3 +72,20 @@ def test_template_round_trips():
 def test_template_escapes_quotes_and_backslashes():
     text = render_template(displays=[('Weird "name" \\ x', True)], audio=[])
     assert parse_config(text).mode("game").displays == ['Weird "name" \\ x']
+
+
+def test_sound_defaults_and_overrides():
+    cfg = parse_config(GOOD)
+    assert cfg.sound_for("game") == "rising"
+    assert cfg.sound_for("tv") == "falling"
+    cfg = parse_config("sound = false\n" + GOOD + 'sound = "C:\\\\tv.wav"\n')
+    assert cfg.sound_for("game") == ""
+    assert cfg.sound_for("tv") == "C:\\tv.wav"
+    cfg = parse_config('sound = "SystemNotification"\n' + GOOD)
+    assert cfg.sound_for("game") == "SystemNotification"
+
+
+@pytest.mark.parametrize("value", ["1", '""', "[]"])
+def test_sound_must_be_bool_or_name(value):
+    with pytest.raises(ConfigError, match="sound must be"):
+        parse_config(f"sound = {value}\n" + GOOD)

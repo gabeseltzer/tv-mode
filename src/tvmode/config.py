@@ -10,6 +10,12 @@ Config is a TOML file:
     displays = ["SAMSUNG"]
     audio = "Realtek Digital Output"
 
+A ``sound`` key (top level, or per mode to override it) picks the sound
+played after a switch: ``true`` (the default: a built-in chime that rises
+for the first mode and falls for the second), ``false``, a built-in chime
+name (``"rising"``, ``"falling"``, ``"chime"``), a ``.wav`` path, or a
+Windows sound alias such as ``"SystemNotification"``.
+
 Each ``displays`` entry and the ``audio`` value is a *matcher*: a
 case-insensitive string compared against the device's friendly name and its
 device path / id. An exact (case-insensitive) name match wins; otherwise a
@@ -31,11 +37,15 @@ class ConfigError(ValueError):
     pass
 
 
+DEFAULT_SOUND = "auto"  # a built-in chime picked by the mode's position
+
+
 @dataclass
 class Mode:
     name: str
     displays: list[str] = field(default_factory=list)
     audio: str | None = None
+    sound: str | None = None  # None = use the config-wide sound; "" = silent
 
 
 @dataclass
@@ -62,6 +72,18 @@ class Config:
     modes: dict[str, Mode] = field(default_factory=dict)
     path: Path | None = None
     auto: AutoConfig | None = None
+    sound: str = DEFAULT_SOUND  # "" = silent
+
+    def sound_for(self, mode: str) -> str:
+        """The sound to play after switching to ``mode`` ("" = none)."""
+        from .sound import default_for
+
+        m = self.modes.get(mode)
+        sound = m.sound if m is not None and m.sound is not None else self.sound
+        if sound == DEFAULT_SOUND:
+            names = list(self.modes)
+            return default_for(names.index(mode) if mode in names else len(names))
+        return sound
 
     def mode(self, name: str) -> Mode:
         try:
@@ -109,15 +131,35 @@ def parse_config(text: str, path: Path | None = None) -> Config:
             raise ConfigError(f"[modes.{name}].audio must be a non-empty string")
         if not displays and audio is None:
             raise ConfigError(f"[modes.{name}] must set displays and/or audio")
-        unknown = set(body) - {"displays", "audio"}
+        unknown = set(body) - {"displays", "audio", "sound"}
         if unknown:
             raise ConfigError(f"[modes.{name}] has unknown keys: {sorted(unknown)}")
-        modes[name] = Mode(name=name, displays=list(displays), audio=audio)
+        sound = (
+            _parse_sound(body["sound"], f"[modes.{name}].sound")
+            if "sound" in body
+            else None
+        )
+        modes[name] = Mode(name=name, displays=list(displays), audio=audio, sound=sound)
 
     auto = None
     if "auto" in data:
         auto = _parse_auto(data["auto"], modes)
-    return Config(modes=modes, path=path, auto=auto)
+    cfg = Config(modes=modes, path=path, auto=auto)
+    if "sound" in data:
+        cfg.sound = _parse_sound(data["sound"], "sound")
+    return cfg
+
+
+def _parse_sound(v, where: str) -> str:
+    if v is True:
+        return DEFAULT_SOUND
+    if v is False:
+        return ""
+    if isinstance(v, str) and v.strip():
+        return v.strip()
+    raise ConfigError(
+        f"{where} must be true, false, a chime name, a .wav path or a Windows sound alias"
+    )
 
 
 def _str_list(body: dict, table: str, key: str) -> list[str]:

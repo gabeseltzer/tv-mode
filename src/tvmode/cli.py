@@ -19,7 +19,15 @@ from .config import (
     load_config,
     render_template,
 )
-from .modes import Backend, WindowsBackend, apply, current_mode, restore, snapshot
+from .modes import (
+    Backend,
+    WindowsBackend,
+    announce,
+    apply,
+    current_mode,
+    restore,
+    snapshot,
+)
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -77,6 +85,15 @@ def _report(res) -> int:
     return EXIT_OK if res.ok else EXIT_FAILED
 
 
+def _announce(res, sound: str, backend: Backend) -> None:
+    """Play the switch sound after the report is printed, then print any
+    problem playing it (a missing .wav shouldn't make a switch fail)."""
+    n = len(res.messages)
+    announce(res, sound, backend)
+    for m in res.messages[n:]:
+        _out(m)
+
+
 def cmd_apply(args, backend: Backend) -> int:
     cfg = _load(args)
     mode = cfg.mode(args.mode)
@@ -87,7 +104,9 @@ def cmd_apply(args, backend: Backend) -> int:
         do_audio=not args.display_only,
         dry_run=args.dry_run,
     )
-    return _report(res)
+    rc = _report(res)
+    _announce(res, cfg.sound_for(mode.name), backend)
+    return rc
 
 
 def cmd_toggle(args, backend: Backend) -> int:
@@ -106,7 +125,9 @@ def cmd_toggle(args, backend: Backend) -> int:
     target = names[1] if cur == names[0] else names[0]
     _out(f"current: {cur or 'unknown'} -> switching to {target}")
     res = apply(cfg.mode(target), backend, dry_run=args.dry_run)
-    return _report(res)
+    rc = _report(res)
+    _announce(res, cfg.sound_for(target), backend)
+    return rc
 
 
 def cmd_test(args, backend: Backend) -> int:

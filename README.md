@@ -60,6 +60,24 @@ displays = ["SAMSUNG"]
 audio = "Realtek Digital Output"
 ```
 
+After a switch that changed something, a short chime plays on the (new)
+default audio device, so you hear that audio landed where you wanted, and
+which mode you're in: by default it rises for the first mode in the config
+and falls for the second. The chimes are generated in code and start with a
+little silence so a receiver doesn't clip them. Set `sound` at the top of the
+config (for every mode) or inside a mode to change it: `false`, a built-in
+chime (`"rising"`, `"falling"`, `"chime"`), a `.wav` path, or a Windows sound
+alias such as `"SystemNotification"`:
+
+```toml
+sound = true                          # default: built-in chime per mode
+
+[modes.tv]
+displays = ["SAMSUNG"]
+audio = "Realtek Digital Output"
+sound = 'C:\Windows\Media\tada.wav'  # this mode only
+```
+
 Each string is matched case-insensitively against the device's friendly name
 and its device path/id, as shown by `tvmode list`. An exact match wins;
 otherwise the substring must match exactly one connected device, or you get an

@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import AutoConfig, Config, Trigger
-from .modes import Backend, apply, current_mode
+from .modes import Backend, announce, apply, current_mode
 from .rawinput import InputDevice, InputEvent, RawInputListener
 from .tray import SEPARATOR, MenuItem, Tray, TrayState, mode_color
 
@@ -395,6 +395,7 @@ class Watcher:
                 return
             if retry and ok:
                 log.info("devices for %s connected; switching", target)
+            announce(res, self.cfg.sound_for(target), self.backend)
             for m in res.messages:
                 log.info(m)
             for e in res.errors:

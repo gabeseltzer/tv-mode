@@ -60,6 +60,7 @@ class FakeBackend:
         self.set_display_calls: list[set[TargetKey]] = []
         self.set_audio_calls: list[str] = []
         self.slept = 0.0
+        self.sounds: list[str] = []
         # Failure injection
         self.display_fail: Exception | None = None
         self.display_check_fail: Exception | None = None
@@ -108,3 +109,6 @@ class FakeBackend:
 
     def sleep(self, seconds):
         self.slept += seconds
+
+    def play_sound(self, sound):
+        self.sounds.append(sound)

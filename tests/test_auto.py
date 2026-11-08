@@ -528,3 +528,10 @@ def test_watcher_requires_auto_section():
     cfg = parse_config(CONFIG.split("[auto]")[0])
     with pytest.raises(ValueError, match="no \\[auto\\]"):
         Watcher(cfg, FakeBackend(), list_devices=list)
+
+
+def test_watcher_plays_sound_on_switch(sync_threads):
+    b = FakeBackend()
+    w, _ = make_watcher(b)
+    w.on_event(key(TV_KB.handle))
+    assert b.sounds == ["falling"]

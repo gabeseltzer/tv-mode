@@ -152,3 +152,29 @@ def test_test_mode_display_only_leaves_audio(cfg):
     assert run(["test", "tv", "--display-only"], b, cfg) == EXIT_OK
     assert b.set_audio_calls == []
     assert b.set_display_calls == [{TV.target}, {MON1.target, MON2.target}]
+
+
+def test_sound_plays_after_a_real_switch_only(cfg):
+    b = FakeBackend()
+    run(["apply", "tv"], b, cfg)
+    assert b.sounds == ["falling"]
+    run(["apply", "tv"], b, cfg)  # already there
+    run(["apply", "game", "--dry-run"], b, cfg)
+    assert b.sounds == ["falling"]
+    run(["toggle"], b, cfg)
+    assert b.sounds == ["falling", "rising"]
+
+
+def test_no_sound_on_failure_and_sound_errors_are_harmless(cfg, capsys):
+    b = FakeBackend()
+    b.display_fail = RuntimeError("nope")
+    run(["apply", "tv"], b, cfg)
+    assert b.sounds == []
+    b.display_fail = None
+
+    def broken(sound):
+        raise RuntimeError("no such file")
+
+    b.play_sound = broken
+    assert run(["apply", "tv"], b, cfg) == EXIT_OK
+    assert "could not play sound 'falling'" in capsys.readouterr().out

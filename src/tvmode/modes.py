@@ -25,6 +25,7 @@ class Backend(Protocol):
     def default_audio_id(self) -> str | None: ...
     def set_default_audio(self, device_id: str) -> None: ...
     def sleep(self, seconds: float) -> None: ...
+    def play_sound(self, sound: str) -> None: ...
 
 
 class WindowsBackend:
@@ -67,6 +68,23 @@ class WindowsBackend:
 
     def sleep(self, seconds: float) -> None:
         time.sleep(seconds)
+
+    def play_sound(self, sound: str) -> None:
+        """Play a built-in chime, a .wav file or a Windows sound alias on the
+        default device, synchronously (an async sound dies with a short-lived
+        CLI process)."""
+        import winsound
+
+        from .sound import builtin
+
+        flags = winsound.SND_NODEFAULT  # never fall back to the error "ding"
+        data = builtin(sound)
+        if data is not None:
+            winsound.PlaySound(data, flags | winsound.SND_MEMORY)
+        elif sound.lower().endswith(".wav"):
+            winsound.PlaySound(sound, flags | winsound.SND_FILENAME)
+        else:
+            winsound.PlaySound(sound, flags | winsound.SND_ALIAS)
 
 
 @dataclass
@@ -340,6 +358,17 @@ def restore(
             )
 
     return res
+
+
+def announce(res: Result, sound: str, backend: Backend) -> None:
+    """Play ``sound`` if ``res`` is a switch that succeeded and changed
+    something. A sound that can't be played is not an error."""
+    if not sound or not res.ok or not (res.display_changed or res.audio_changed):
+        return
+    try:
+        backend.play_sound(sound)
+    except Exception as e:  # noqa: BLE001
+        res.messages.append(f"(could not play sound {sound!r}: {e})")
 
 
 def current_mode(modes: dict[str, Mode], backend: Backend) -> str | None:
